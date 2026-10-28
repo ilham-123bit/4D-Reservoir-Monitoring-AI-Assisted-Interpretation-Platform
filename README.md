@@ -1,0 +1,2 @@
+# 4D-Reservoir-Monitoring-AI-Assisted-Interpretation-Platform
+Interactive decision-support dashboard with AI-assisted interpretation to help reservoir engineers investigate detected zones and evaluate potential operational responses. This is done by detecting and clustering anomalous seismic response zones, integrate reservoir masks, well locations or compartment information, and rank/score reservoir changes.
