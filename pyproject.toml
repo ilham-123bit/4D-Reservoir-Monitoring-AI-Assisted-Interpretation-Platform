@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reservoir-time-machine"
+version = "0.1.0"
+description = "Dataset-independent 4D seismic analysis and evidence interpretation platform"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.32", "plotly>=5.18", "pandas>=2.0"]
+test = ["pytest>=7.0"]
+lint = ["ruff>=0.4"]
+competition-data = ["segyio>=1.9", "lasio>=0.31", "openpyxl>=3.1"]
+llm = ["openai>=1.0"]
+ml = ["scikit-learn>=1.3"]
+
+[project.scripts]
+reservoir-time-machine = "reservoir_time_machine.cli:main"
+rtm-hpc-environment = "reservoir_time_machine.hpc.environment:main"
+rtm-hpc-train = "reservoir_time_machine.hpc.training:main"
+rtm-hpc-infer = "reservoir_time_machine.hpc.inference:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["legacy_synthetic"]
+addopts = "-q"

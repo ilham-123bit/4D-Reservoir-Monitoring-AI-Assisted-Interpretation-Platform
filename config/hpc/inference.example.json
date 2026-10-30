@@ -1,0 +1,9 @@
+{
+  "run_name": "configure-before-use",
+  "checkpoint": "experiments/paired_change_research/run-name/checkpoints/best.pt",
+  "threshold": 0.0,
+  "data": {
+    "adapter": "team_adapter.module:iter_inference_tiles",
+    "contract": "yield dictionaries with tile_ids and paired patches (Siamese) or input patches (autoencoder)"
+  }
+}

@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reservoir-time-machine.local/schemas/dataset-manifest.schema.json",
+  "title": "Reservoir Time Machine dataset manifest",
+  "description": "Metadata and provenance contract only. It contains no seismic samples or well log curves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "data_classification", "synthetic", "provenance", "surveys", "well_inventory", "products"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "dataset_id": {"type": "string", "minLength": 1},
+    "data_classification": {"enum": ["public", "restricted", "confidential", "unknown"]},
+    "synthetic": {"const": false},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "surveys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "monitor"],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/survey"},
+        "monitor": {"$ref": "#/$defs/survey"}
+      }
+    },
+    "well_inventory": {"type": "array", "items": {"$ref": "#/$defs/well"}},
+    "products": {"type": "array", "items": {"$ref": "#/$defs/dugProduct"}},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "availability"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "format": {"type": "string"},
+        "availability": {"enum": ["present", "missing", "not_supplied", "unknown"]},
+        "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "sha256": {"type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$"},
+        "source_read_only": {"type": ["boolean", "null"]}
+      },
+      "allOf": [{"if": {"properties": {"availability": {"const": "present"}}, "required": ["availability"]}, "then": {"required": ["size_bytes", "sha256"]}}]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"type": ["string", "null"]},
+        "received_at": {"type": ["string", "null"], "format": "date-time"},
+        "authorized_storage_reference": {"type": ["string", "null"]},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "coordinateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["known", "unknown", "not_applicable"]},
+        "authority": {"type": ["string", "null"]},
+        "units": {"type": ["string", "null"]},
+        "axis_order": {"type": ["array", "null"], "items": {"type": "string"}},
+        "evidence": {"type": ["string", "null"]}
+      },
+      "allOf": [{"if": {"properties": {"status": {"const": "known"}}, "required": ["status"]}, "then": {"required": ["authority", "units", "axis_order"]}}]
+    },
+    "survey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["survey_id", "label", "seismic_file", "axes", "geometry_status", "coordinate_reference"],
+      "properties": {
+        "survey_id": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "acquisition_date": {"type": ["string", "null"], "format": "date"},
+        "seismic_file": {"$ref": "#/$defs/file"},
+        "segy_metadata": {"$ref": "#/$defs/segyMetadata"},
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["array_order", "inline", "crossline", "sample"],
+          "properties": {
+            "array_order": {"const": ["inline", "crossline", "sample"]},
+            "inline": {"$ref": "#/$defs/axis"},
+            "crossline": {"$ref": "#/$defs/axis"},
+            "sample": {"$ref": "#/$defs/sampleAxis"}
+          }
+        },
+        "geometry_status": {"enum": ["unverified", "verified", "incompatible", "incomplete"]},
+        "coordinate_reference": {"$ref": "#/$defs/coordinateReference"},
+        "trace_key": {"type": ["array", "null"], "items": {"type": "string"}},
+        "trace_order": {"type": ["string", "null"]},
+        "registration_reference": {"type": ["string", "null"]},
+        "qc": {"type": "object", "additionalProperties": true},
+        "processing_history": {"type": "array", "items": {"$ref": "#/$defs/provenance"}}
+      },
+      "allOf": [{"if": {"properties": {"seismic_file": {"properties": {"format": {"const": "segy"}}, "required": ["format"]}}, "required": ["seismic_file"]}, "then": {"required": ["segy_metadata"]}}]
+    },
+    "axis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "count", "identifier_source"],
+      "properties": {
+        "unit": {"type": "string"},
+        "count": {"type": ["integer", "null"], "minimum": 1},
+        "minimum": {"type": ["number", "null"]},
+        "maximum": {"type": ["number", "null"]},
+        "identifier_source": {"type": "string"},
+        "spacing": {"type": ["number", "null"]},
+        "domain": {"enum": ["two_way_time", "one_way_time", "depth", "index", "unknown"]},
+        "interval": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "origin": {"type": ["number", "null"]},
+        "interval_unit": {"type": "string"},
+        "origin_unit": {"type": "string"}
+      }
+    },
+    "segyMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "endianness", "sample_format_code", "fixed_length_traces", "trace_header_mapping", "coordinate_scalar", "coordinate_units_code", "extended_text_header_count"],
+      "properties": {
+        "revision": {"type": ["string", "null"]},
+        "endianness": {"enum": ["big", "little", "unknown"]},
+        "sample_format_code": {"type": ["integer", "null"]},
+        "fixed_length_traces": {"type": ["boolean", "null"]},
+        "trace_header_mapping": {"type": "object", "required": ["inline", "crossline"], "properties": {"inline": {"type": "string"}, "crossline": {"type": "string"}, "sample_interval": {"type": ["string", "null"]}, "sample_count": {"type": ["string", "null"]}, "x": {"type": ["string", "null"]}, "y": {"type": ["string", "null"]}}},
+        "coordinate_scalar": {"type": ["integer", "null"]},
+        "coordinate_units_code": {"type": ["integer", "null"]},
+        "extended_text_header_count": {"type": ["integer", "null"]}
+      }
+    },
+    "sampleAxis": {
+      "allOf": [{"$ref": "#/$defs/axis"}],
+      "required": ["domain", "interval", "origin", "interval_unit", "origin_unit"]
+    },
+    "well": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["well_id", "source_files", "coordinate_reference", "data_coverage"],
+      "properties": {
+        "well_id": {"type": "string", "minLength": 1},
+        "source_files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+        "coordinate_reference": {"$ref": "#/$defs/coordinateReference"},
+        "coordinates": {"type": ["object", "null"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": ["number", "null"]}}, "required": ["x", "y"], "additionalProperties": false},
+        "data_coverage": {"type": "object", "additionalProperties": {"enum": ["present", "missing", "not_supplied", "unknown"]}},
+        "depth_reference": {"type": ["string", "null"]},
+        "production_data_included": {"type": "boolean", "default": false}
+      },
+      "allOf": [{"if": {"properties": {"coordinate_reference": {"properties": {"status": {"const": "known"}}, "required": ["status"]}}, "required": ["coordinate_reference"]}, "then": {"required": ["coordinates"]}}]
+    },
+    "dugProduct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_type", "file", "metadata_status", "provenance"],
+      "properties": {
+        "product_type": {"enum": ["attribute", "horizon", "fault", "geobody", "time_shift", "repeatability_qc", "well_export", "other"]},
+        "file": {"$ref": "#/$defs/file"},
+        "metadata_status": {"enum": ["complete", "partial", "unknown"]},
+        "units": {"type": ["string", "null"]},
+        "sample_domain": {"type": ["string", "null"]},
+        "geometry_reference": {"type": ["string", "null"]},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    }
+  }
+}

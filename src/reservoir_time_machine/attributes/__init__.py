@@ -1,0 +1,1 @@
+"""Paired-vintage change attributes."""

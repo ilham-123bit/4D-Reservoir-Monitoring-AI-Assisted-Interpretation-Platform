@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reservoir-time-machine.local/schemas/validation-report.schema.json",
+  "title": "Reservoir Time Machine validation report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "can_proceed", "metadata", "findings"],
+  "properties": {
+    "status": {"enum": ["pass", "warning", "fail"]},
+    "can_proceed": {"type": "boolean"},
+    "metadata": {"type": "object"},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "status", "explanation", "affected_input", "metadata", "recommended_action", "blocking"],
+      "properties": {
+        "check_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "warning", "fail"]},
+        "explanation": {"type": "string", "minLength": 1},
+        "affected_input": {"type": "array", "items": {"type": "string"}},
+        "metadata": {"type": "object"},
+        "recommended_action": {"type": "string"},
+        "blocking": {"type": "boolean"}
+      }
+    }
+  }
+}

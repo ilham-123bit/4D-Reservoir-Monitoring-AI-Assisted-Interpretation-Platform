@@ -1,0 +1,39 @@
+# Template only. No dataset is present or implied by this configuration.
+# Set RTM_DATA_ROOT in the execution environment; do not put restricted paths here.
+contract_version: "1.0"
+dataset_root: "${RTM_DATA_ROOT}"
+data_classification: "unknown"
+synthetic: false
+
+surveys:
+  baseline:
+    file: "surveys/baseline.sgy"
+    format: "segy"
+    array_order: ["inline", "crossline", "sample"]
+    sample_domain: "unknown" # two_way_time | one_way_time | depth | index | unknown
+    sample_interval: null
+    sample_interval_unit: null
+    sample_origin: null
+    coordinate_reference:
+      status: "unknown"
+  monitor:
+    file: "surveys/monitor.sgy"
+    format: "segy"
+    array_order: ["inline", "crossline", "sample"]
+    sample_domain: "unknown"
+    sample_interval: null
+    sample_interval_unit: null
+    sample_origin: null
+    coordinate_reference:
+      status: "unknown"
+
+geometry_validation:
+  required_before_pairing: true
+  matching_key: ["inline", "crossline"]
+  coordinate_transform: null # Must be explicitly supplied and evidenced.
+  registration_product: null
+
+outputs:
+  root: "${RTM_OUTPUT_ROOT}"
+  preserve_inputs_read_only: true
+  create_run_manifest: true

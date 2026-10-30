@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reservoir-time-machine.local/schemas/evidence-packet.schema.json",
+  "title": "Evidence packet for optional AI interpretation",
+  "description": "Compact analytical evidence only; never a raw seismic cube or restricted file payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "data_classification", "observations", "detections", "interpretation_hypotheses", "alternatives", "uncertainty", "missing_evidence", "requested_output"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run_id": {"type": "string"},
+    "data_classification": {"enum": ["public", "restricted", "confidential", "unknown"]},
+    "observations": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "detections": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "interpretation_hypotheses": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "alternatives": {"type": "array", "items": {"type": "string"}},
+    "uncertainty": {"type": "array", "items": {"type": "string"}},
+    "missing_evidence": {"type": "array", "items": {"type": "string"}},
+    "requested_output": {"const": ["observations", "detections", "hypotheses", "alternatives", "uncertainty", "follow_up"]}
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "source", "status"],
+      "properties": {
+        "statement": {"type": "string"},
+        "source": {"type": "string"},
+        "status": {"enum": ["measured", "algorithmic_detection", "hypothesis", "recommendation"]},
+        "score": {"type": ["number", "null"]},
+        "score_semantics": {"enum": ["not_applicable", "uncalibrated_strength", "calibrated_probability"]},
+        "uncertainty": {"type": ["string", "null"]},
+        "supporting_output": {"type": ["string", "null"]},
+        "calibration_method": {"type": ["string", "null"]},
+        "validation_reference": {"type": ["string", "null"]}
+      },
+      "allOf": [{"if": {"properties": {"score_semantics": {"const": "calibrated_probability"}}, "required": ["score_semantics"]}, "then": {"required": ["calibration_method", "validation_reference"]}}]
+    }
+  }
+}
