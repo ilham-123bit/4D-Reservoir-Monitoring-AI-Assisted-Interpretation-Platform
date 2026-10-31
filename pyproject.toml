@@ -23,6 +23,7 @@ reservoir-time-machine = "reservoir_time_machine.cli:main"
 rtm-hpc-environment = "reservoir_time_machine.hpc.environment:main"
 rtm-hpc-train = "reservoir_time_machine.hpc.training:main"
 rtm-hpc-infer = "reservoir_time_machine.hpc.inference:main"
+rtm-trace-coverage = "reservoir_time_machine.data_ingest.trace_matching:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

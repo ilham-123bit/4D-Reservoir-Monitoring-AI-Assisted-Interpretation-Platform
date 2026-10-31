@@ -16,6 +16,8 @@ The check reports exact complete-record count, trailing header/sample bytes, fir
 
 Trace correspondence uses unique `(inline,crossline)` keys. Duplicate keys, zero IDs, empty key sets, or different key coverage fail. Equal key sets in different file order produce a warning and a monitor-index reordering map; comparison must reindex by keys, never file sequence numbers.
 
+For surveys with different trace coverage, use the separate [coverage matching workflow](trace_coverage_matching.md). It preserves the Baseline-ordered common mapping and returns Monitor-only keys and indices separately. The legacy strict pair validator continues to reject unequal key sets; use the lazy key-matched trace iterator only after independent geometry and sample-axis gates pass. Matching identifiers do not establish physical registration or waveform comparability.
+
 Volume geometry checks compare dimensions, axis labels/order, explicit inline/crossline ID arrays, sample interval and units, declared sample domain and sample units, sample origin and units, and explicit geometry-verification state. Unknown sample domain, origin, identifiers, or unverified survey geometry blocks paired calculations. A coordinate reference mismatch fails. Missing CRS is a non-blocking warning for verified bin-index analysis but disables map-space interpretation and well joins.
 
 SEG-Y coordinate checks apply the signed coordinate scalar and compare X/Y at matched bins, while also comparing coordinate-unit codes. Undefined coordinate units with non-zero coordinates block spatial use. Matching coordinate headers do not establish a CRS; an authoritative CRS/navigation source remains necessary for map-space operations.
