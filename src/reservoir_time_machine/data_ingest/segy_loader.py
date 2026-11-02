@@ -25,6 +25,371 @@ def iter_segy_traces(path: str | Path, *, endian: str = "big") -> Iterator[tuple
             xl = int(header[segyio.TraceField.CROSSLINE_3D])
             yield index, il, xl, np.asarray(segy.trace[index])
 
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PairedTraceIndex:
+    """Compact correspondence between Baseline and Monitor SEG-Y traces."""
+
+    baseline_keys: tuple[tuple[int, int], ...]
+    monitor_index_for_baseline: tuple[int, ...]
+    monitor_only_indices: tuple[int, ...]
+    monitor_only_keys: tuple[tuple[int, int], ...]
+
+    @property
+    def paired_trace_count(self) -> int:
+        return len(self.baseline_keys)
+
+    @property
+    def monitor_only_count(self) -> int:
+        return len(self.monitor_only_indices)
+
+
+def build_paired_trace_index(
+    baseline_path: str | Path,
+    monitor_path: str | Path,
+    *,
+    endian: str = "big",
+) -> PairedTraceIndex:
+    """
+    Build trace correspondence using (inline, crossline).
+
+    No seismic samples are loaded. Original SEG-Y files are opened read-only.
+    """
+
+    try:
+        import segyio
+    except ImportError as exc:
+        raise RuntimeError("Trace indexing requires segyio") from exc
+
+    def read_keys(path):
+        keys = []
+
+        with segyio.open(
+            str(path), "r", ignore_geometry=True, endian=endian
+        ) as segy:
+            for i in range(int(segy.tracecount)):
+                header = segy.header[i]
+
+                il = int(header[segyio.TraceField.INLINE_3D])
+                xl = int(header[segyio.TraceField.CROSSLINE_3D])
+
+                if il == 0 or xl == 0:
+                    raise ValueError(
+                        f"Invalid zero inline/crossline key at trace {i}: "
+                        f"({il}, {xl}) in {path}"
+                    )
+
+                keys.append((il, xl))
+
+        if len(keys) != len(set(keys)):
+            raise ValueError(
+                f"Duplicate inline/crossline keys detected in {path}"
+            )
+
+        return tuple(keys)
+
+    baseline_keys = read_keys(baseline_path)
+    monitor_keys = read_keys(monitor_path)
+
+    monitor_lookup = {
+        key: index for index, key in enumerate(monitor_keys)
+    }
+
+    baseline_set = set(baseline_keys)
+
+    baseline_only = baseline_set - set(monitor_keys)
+
+    if baseline_only:
+        examples = sorted(baseline_only)[:10]
+        raise ValueError(
+            f"Monitor is missing {len(baseline_only)} Baseline keys. "
+            f"Examples: {examples}"
+        )
+
+    monitor_index_for_baseline = tuple(
+        monitor_lookup[key] for key in baseline_keys
+    )
+
+    monitor_only_indices = tuple(
+        index
+        for index, key in enumerate(monitor_keys)
+        if key not in baseline_set
+    )
+
+    monitor_only_keys = tuple(
+        monitor_keys[index] for index in monitor_only_indices
+    )
+
+    return PairedTraceIndex(
+        baseline_keys=baseline_keys,
+        monitor_index_for_baseline=monitor_index_for_baseline,
+        monitor_only_indices=monitor_only_indices,
+        monitor_only_keys=monitor_only_keys,
+    )
+
+
+def write_paired_segy_pilot(
+    baseline_path: str | Path,
+    monitor_path: str | Path,
+    output_dir: str | Path,
+    *,
+    inline_ids: set[int],
+    crossline_ids: set[int],
+    endian: str = "big",
+    sample_range: tuple[int, int] | None = None,
+) -> tuple[SeismicVolume, SeismicVolume, dict]:
+    """
+    Write a small, real-data Baseline/Monitor pilot.
+
+    Both volumes use Baseline inline/crossline indexing.
+    Original SEG-Y files are opened read-only.
+    Existing output directories are rejected to prevent overwrites.
+    """
+    import json
+
+    try:
+        import segyio
+    except ImportError as exc:
+        raise RuntimeError("Paired SEG-Y loading requires segyio") from exc
+
+    baseline_path = Path(baseline_path)
+    monitor_path = Path(monitor_path)
+    output_dir = Path(output_dir)
+
+    if not baseline_path.is_file() or not monitor_path.is_file():
+        raise FileNotFoundError("Baseline or Monitor SEG-Y file is missing.")
+
+    if output_dir.exists():
+        raise FileExistsError(
+            f"Output directory already exists; refusing to overwrite: {output_dir}"
+        )
+
+    if not inline_ids or not crossline_ids:
+        raise ValueError("Pilot requires non-empty inline_ids and crossline_ids.")
+
+    # Build the correspondence using the already-tested trace-key function.
+    paired_index = build_paired_trace_index(
+        baseline_path, monitor_path, endian=endian
+    )
+
+    baseline_key_to_index = {
+        key: i for i, key in enumerate(paired_index.baseline_keys)
+    }
+
+    with segyio.open(
+        str(baseline_path), "r", ignore_geometry=True, endian=endian
+    ) as base, segyio.open(
+        str(monitor_path), "r", ignore_geometry=True, endian=endian
+    ) as mon:
+
+        base_ns = len(base.samples)
+        mon_ns = len(mon.samples)
+        base_dt = int(base.bin[segyio.BinField.Interval])
+        mon_dt = int(mon.bin[segyio.BinField.Interval])
+        base_format = int(base.bin[segyio.BinField.Format])
+        mon_format = int(mon.bin[segyio.BinField.Format])
+
+        if base_ns != mon_ns:
+            raise ValueError(
+                f"Sample-count mismatch: Baseline={base_ns}, Monitor={mon_ns}"
+            )
+        if base_dt != mon_dt:
+            raise ValueError(
+                f"Sample-interval mismatch: Baseline={base_dt}, Monitor={mon_dt}"
+            )
+        if base_format != mon_format:
+            raise ValueError(
+                f"Sample-format mismatch: Baseline={base_format}, Monitor={mon_format}"
+            )
+
+        sample_start, sample_stop = sample_range or (0, base_ns)
+        if not 0 <= sample_start < sample_stop <= base_ns:
+            raise ValueError("Invalid sample_range.")
+
+        n_samples = sample_stop - sample_start
+
+        # Establish the selected Baseline grid from actual trace keys.
+        selected_keys = [
+            key for key in paired_index.baseline_keys
+            if key[0] in inline_ids and key[1] in crossline_ids
+        ]
+
+        if not selected_keys:
+            raise ValueError("No Baseline traces found in the requested pilot region.")
+
+        selected_inlines = sorted({key[0] for key in selected_keys})
+        selected_crosslines = sorted({key[1] for key in selected_keys})
+
+        inline_index = {value: i for i, value in enumerate(selected_inlines)}
+        crossline_index = {value: i for i, value in enumerate(selected_crosslines)}
+
+        shape = (
+            len(selected_inlines),
+            len(selected_crosslines),
+            n_samples,
+        )
+
+        selected_set = set(selected_keys)
+        key_to_location = {
+            key: (inline_index[key[0]], crossline_index[key[1]])
+            for key in selected_keys
+        }
+
+        # Confirm that each selected Baseline key has a Monitor counterpart.
+        selected_monitor_indices = {
+            key: paired_index.monitor_index_for_baseline[
+                baseline_key_to_index[key]
+            ]
+            for key in selected_keys
+        }
+
+        # Create output only after all preflight checks pass.
+        output_dir.mkdir(parents=True, exist_ok=False)
+
+        baseline_map = np.lib.format.open_memmap(
+            output_dir / "baseline_pilot.npy",
+            mode="w+",
+            dtype=np.float32,
+            shape=shape,
+        )
+        monitor_map = np.lib.format.open_memmap(
+            output_dir / "monitor_pilot.npy",
+            mode="w+",
+            dtype=np.float32,
+            shape=shape,
+        )
+
+        baseline_map[:] = np.nan
+        monitor_map[:] = np.nan
+
+        missing_mask = np.ones(shape[:2], dtype=bool)
+
+        # Read Baseline sequentially and write selected traces.
+        for key in selected_keys:
+            trace_index = baseline_key_to_index[key]
+            trace = np.asarray(
+                base.trace[trace_index][sample_start:sample_stop],
+                dtype=np.float32,
+            )
+            if trace.size != n_samples:
+                raise ValueError(f"Unexpected Baseline sample count at {key}")
+
+            loc = key_to_location[key]
+            baseline_map[loc[0], loc[1], :] = trace
+            missing_mask[loc] = False
+
+        # Read Monitor sequentially and place traces by key, never file order.
+        monitor_key_to_location = key_to_location
+
+        for monitor_trace_index in range(int(mon.tracecount)):
+            header = mon.header[monitor_trace_index]
+            key = (
+                int(header[segyio.TraceField.INLINE_3D]),
+                int(header[segyio.TraceField.CROSSLINE_3D]),
+            )
+
+            if key not in monitor_key_to_location:
+                continue
+
+            trace = np.asarray(
+                mon.trace[monitor_trace_index][sample_start:sample_stop],
+                dtype=np.float32,
+            )
+            if trace.size != n_samples:
+                raise ValueError(f"Unexpected Monitor sample count at {key}")
+
+            loc = monitor_key_to_location[key]
+            monitor_map[loc[0], loc[1], :] = trace
+
+        # Preserve the complete trace-key list for this pilot.
+        np.save(
+            output_dir / "trace_keys.npy",
+            np.asarray(selected_keys, dtype=np.int32),
+        )
+        np.save(output_dir / "missing_trace_mask.npy", missing_mask)
+
+        # Verify that every selected key was written into both arrays.
+        paired_written = int(np.count_nonzero(~missing_mask))
+        monitor_finite = np.isfinite(monitor_map).all(axis=2)
+        baseline_finite = np.isfinite(baseline_map).all(axis=2)
+
+        if not np.array_equal(baseline_finite, monitor_finite):
+            raise RuntimeError(
+                "Pilot QC failed: Baseline and Monitor trace coverage differs."
+            )
+
+        baseline_map.flush()
+        monitor_map.flush()
+
+        metadata = {
+            "baseline_source": baseline_path.name,
+            "monitor_source": monitor_path.name,
+            "pairing_key": ["inline", "crossline"],
+            "array_axes": ["inline", "crossline", "sample"],
+            "shape": list(shape),
+            "inline_ids": selected_inlines,
+            "crossline_ids": selected_crosslines,
+            "paired_trace_count": paired_written,
+            "sample_count": n_samples,
+            "sample_interval_us": base_dt,
+            "sample_domain": "unverified",
+            "sample_origin": None,
+            "monitor_only_trace_count_in_source": paired_index.monitor_only_count,
+            "coordinate_method": "Baseline trace-key grid",
+            "monitor_coordinate_headers_used": False,
+            "physical_4d_registration": "not established by trace-key pairing",
+        }
+
+        with (output_dir / "metadata.json").open("w") as stream:
+            json.dump(metadata, stream, indent=2)
+
+    baseline_metadata = SurveyMetadata(
+        survey_id="challenge3_baseline_pilot",
+        label="Challenge 3 Baseline Pilot",
+        dimensions=shape,
+        inline_units="SEG-Y inline identifier",
+        crossline_units="SEG-Y crossline identifier",
+        sample_interval=base_dt,
+        sample_interval_units="microseconds",
+        sample_units="unknown",
+        sample_axis_domain="unknown",
+        synthetic=False,
+        source_metadata={
+            **metadata,
+            "source_file_name": baseline_path.name,
+            "geometry_status": "baseline_grid_mapping_verified",
+        },
+    )
+
+    monitor_metadata = SurveyMetadata(
+        survey_id="challenge3_monitor_pilot",
+        label="Challenge 3 Monitor Pilot",
+        dimensions=shape,
+        inline_units="SEG-Y inline identifier",
+        crossline_units="SEG-Y crossline identifier",
+        sample_interval=mon_dt,
+        sample_interval_units="microseconds",
+        sample_units="unknown",
+        sample_axis_domain="unknown",
+        synthetic=False,
+        source_metadata={
+            **metadata,
+            "source_file_name": monitor_path.name,
+            "geometry_status": "4d_registration_unverified",
+        },
+    )
+
+    baseline_volume = SeismicVolume(
+        baseline_map, baseline_metadata, missing_mask
+    )
+    monitor_volume = SeismicVolume(
+        monitor_map, monitor_metadata, missing_mask.copy()
+    )
+
+    return baseline_volume, monitor_volume, metadata
+
 
 def load_segy_volume(path: str | Path, *, endian: str = "big", max_memory_bytes: int = 1_500_000_000,
                      memmap_path: str | Path | None = None, label: str | None = None,
@@ -386,3 +751,406 @@ def load_challenge3_pair(root: str | Path, *, max_pair_memory_bytes: int = 2_000
                          "spatial_geometry_compatible": compatibility["spatial_geometry_compatible"]}))
     validate_pair(baseline, monitor)
     return baseline, monitor
+
+def load_challenge3_paired_volumes(
+    root: str | Path,
+    *,
+    output_dir: str | Path | None = None,
+    endian: str = "big",
+) -> tuple[SeismicVolume, SeismicVolume]:
+    """Load Challenge 3 on the Baseline grid, pairing strictly by (inline, crossline).
+
+    Monitor-only traces are preserved separately. Original SEG-Y files are read-only.
+    """
+    import json
+    import segyio
+
+    from ..data_audit.audit import BASELINE, MONITOR
+
+    root = Path(root)
+    baseline_path = root / BASELINE
+    monitor_path = root / MONITOR
+
+    for path in (baseline_path, monitor_path):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+
+    if output_dir is None:
+        output_dir = root / ".reservoir_time_machine_cache" / "challenge3_paired"
+
+    output_dir = Path(output_dir)
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_dir.exists():
+        # Reuse an existing completed cache without rebuilding or overwriting it.
+        required_files = (
+            "metadata.json",
+            "baseline.npy",
+            "monitor.npy",
+            "missing_trace_mask.npy",
+            "monitor_only_traces.npy",
+            "monitor_only_keys.npy",
+        )
+        missing_files = [
+            name for name in required_files
+            if not (output_dir / name).is_file()
+        ]
+        if missing_files:
+            raise RuntimeError(
+                f"Incomplete paired cache at {output_dir}; "
+                f"missing files: {missing_files}. Refusing to overwrite it."
+            )
+
+        try:
+            with (output_dir / "metadata.json").open("r") as stream:
+                metadata = json.load(stream)
+
+            shape = tuple(int(v) for v in metadata["shape"])
+            inline_ids = metadata["inline_ids"]
+            crossline_ids = metadata["crossline_ids"]
+            base_dt = int(metadata["sample_interval_us"])
+
+            if len(shape) != 3 or any(v < 1 for v in shape):
+                raise ValueError(f"Invalid shape: {shape}")
+            if shape != (
+                len(inline_ids),
+                len(crossline_ids),
+                int(metadata["sample_count"]),
+            ):
+                raise ValueError("Metadata dimensions disagree")
+            if metadata["pairing_key"] != ["inline", "crossline"]:
+                raise ValueError("Unexpected pairing key")
+            if metadata["array_axes"] != ["inline", "crossline", "sample"]:
+                raise ValueError("Unexpected array axes")
+            if metadata["trace_key_pairing_verified"] is not True:
+                raise ValueError("Trace-key pairing is not verified")
+            if metadata["physical_4d_registration"] != "not established":
+                raise ValueError("Unexpected physical registration status")
+            if metadata["monitor_coordinate_headers_used"] is not False:
+                raise ValueError("Unexpected Monitor coordinate handling")
+            if metadata["baseline_source"] != baseline_path.name:
+                raise ValueError("Baseline source filename mismatch")
+            if metadata["monitor_source"] != monitor_path.name:
+                raise ValueError("Monitor source filename mismatch")
+            if base_dt != 2000:
+                raise ValueError(f"Unexpected sample interval: {base_dt}")
+
+            paired_count = int(metadata["paired_trace_count"])
+            monitor_only_count = int(metadata["monitor_only_trace_count"])
+
+            if paired_count != int(metadata["baseline_trace_count"]):
+                raise ValueError("Baseline and paired trace counts disagree")
+            if paired_count < 1 or monitor_only_count < 0:
+                raise ValueError("Invalid trace counts")
+
+            baseline_data = np.load(
+                output_dir / "baseline.npy",
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            monitor_data = np.load(
+                output_dir / "monitor.npy",
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            missing = np.load(
+                output_dir / "missing_trace_mask.npy",
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            monitor_only_data = np.load(
+                output_dir / "monitor_only_traces.npy",
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            monitor_only_keys = np.load(
+                output_dir / "monitor_only_keys.npy",
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+
+            if baseline_data.shape != shape or monitor_data.shape != shape:
+                raise ValueError("Seismic volume shape mismatch")
+            if baseline_data.dtype != np.float32 or monitor_data.dtype != np.float32:
+                raise ValueError("Seismic volumes must be float32")
+            if missing.shape != shape[:2] or missing.dtype != np.bool_:
+                raise ValueError("Missing-trace mask shape or dtype mismatch")
+            if monitor_only_data.shape != (monitor_only_count, shape[2]):
+                raise ValueError("Monitor-only trace archive shape mismatch")
+            if monitor_only_data.dtype != np.float32:
+                raise ValueError("Monitor-only archive must be float32")
+            if monitor_only_keys.shape != (monitor_only_count, 2):
+                raise ValueError("Monitor-only key shape mismatch")
+            if monitor_only_keys.dtype != np.int32:
+                raise ValueError("Monitor-only keys must be int32")
+            if int(np.count_nonzero(missing)) != int(
+                metadata["missing_grid_cell_count"]
+            ):
+                raise ValueError("Missing-trace count disagrees with metadata")
+
+            arrays = (
+                baseline_data,
+                monitor_data,
+                missing,
+                monitor_only_data,
+                monitor_only_keys,
+            )
+            if any(array.flags.writeable for array in arrays):
+                raise ValueError("A cached array is not read-only")
+
+        except Exception as exc:
+            raise RuntimeError(
+                f"Paired cache validation failed at {output_dir}: {exc}. "
+                "Cache was not modified."
+            ) from exc
+
+        baseline_metadata = SurveyMetadata(
+            survey_id="challenge3_baseline",
+            label="Challenge 3 Baseline",
+            dimensions=shape,
+            inline_units="SEG-Y inline identifier",
+            crossline_units="SEG-Y crossline identifier",
+            sample_interval=base_dt,
+            sample_interval_units="microseconds",
+            sample_units="unknown",
+            sample_axis_domain="unknown",
+            synthetic=False,
+            source_metadata={
+                **metadata,
+                "source_file_name": baseline_path.name,
+                "spatial_geometry_compatible": True,
+                "paired_grid_available": True,
+            },
+        )
+
+        monitor_metadata = SurveyMetadata(
+            survey_id="challenge3_monitor",
+            label="Challenge 3 Monitor",
+            dimensions=shape,
+            inline_units="SEG-Y inline identifier",
+            crossline_units="SEG-Y crossline identifier",
+            sample_interval=base_dt,
+            sample_interval_units="microseconds",
+            sample_units="unknown",
+            sample_axis_domain="unknown",
+            synthetic=False,
+            source_metadata={
+                **metadata,
+                "source_file_name": monitor_path.name,
+                "spatial_geometry_compatible": True,
+                "paired_grid_available": True,
+                "physical_4d_registration_verified": False,
+            },
+        )
+
+        return (
+            SeismicVolume(baseline_data, baseline_metadata, missing),
+            SeismicVolume(monitor_data, monitor_metadata, missing),
+        )
+
+    # Build correspondence by trace key, not file order.
+    pair_index = build_paired_trace_index(
+        baseline_path, monitor_path, endian=endian
+    )
+
+    with segyio.open(
+        str(baseline_path), "r", ignore_geometry=True, endian=endian
+    ) as base, segyio.open(
+        str(monitor_path), "r", ignore_geometry=True, endian=endian
+    ) as mon:
+
+        base_ns = len(base.samples)
+        mon_ns = len(mon.samples)
+        base_dt = int(base.bin[segyio.BinField.Interval])
+        mon_dt = int(mon.bin[segyio.BinField.Interval])
+        base_format = int(base.bin[segyio.BinField.Format])
+        mon_format = int(mon.bin[segyio.BinField.Format])
+
+        if base_ns != mon_ns:
+            raise ValueError(f"Sample-count mismatch: {base_ns} != {mon_ns}")
+        if base_dt != mon_dt:
+            raise ValueError(f"Sample-interval mismatch: {base_dt} != {mon_dt}")
+        if base_format != mon_format:
+            raise ValueError(f"Sample-format mismatch: {base_format} != {mon_format}")
+        if base_dt != 2000:
+            raise ValueError(f"Unexpected Challenge 3 sample interval: {base_dt} us")
+
+        # Establish the common Baseline grid.
+        baseline_keys = pair_index.baseline_keys
+        inline_ids = sorted({key[0] for key in baseline_keys})
+        crossline_ids = sorted({key[1] for key in baseline_keys})
+
+        il_index = {value: i for i, value in enumerate(inline_ids)}
+        xl_index = {value: i for i, value in enumerate(crossline_ids)}
+
+        shape = (len(inline_ids), len(crossline_ids), base_ns)
+        grid_shape = shape[:2]
+
+        output_dir.mkdir(parents=True, exist_ok=False)
+
+        try:
+            baseline_map = np.lib.format.open_memmap(
+                output_dir / "baseline.npy",
+                mode="w+", dtype=np.float32, shape=shape
+            )
+            monitor_map = np.lib.format.open_memmap(
+                output_dir / "monitor.npy",
+                mode="w+", dtype=np.float32, shape=shape
+            )
+
+            baseline_map[:] = np.nan
+            monitor_map[:] = np.nan
+
+            missing_mask = np.ones(grid_shape, dtype=bool)
+
+            # Write Baseline traces onto the Baseline grid.
+            for trace_index, key in enumerate(baseline_keys):
+                il, xl = key
+                loc = (il_index[il], xl_index[xl])
+                trace = np.asarray(base.trace[trace_index], dtype=np.float32)
+
+                if trace.size != base_ns:
+                    raise ValueError(f"Unexpected Baseline samples at {key}")
+
+                baseline_map[loc[0], loc[1], :] = trace
+                missing_mask[loc] = False
+
+            # Monitor correspondence: key -> Monitor file trace index.
+            monitor_lookup = {
+                key: index
+                for key, index in zip(
+                    pair_index.baseline_keys,
+                    pair_index.monitor_index_for_baseline
+                )
+            }
+
+            # Read paired Monitor traces by key.
+            for key, monitor_index in monitor_lookup.items():
+                il, xl = key
+                loc = (il_index[il], xl_index[xl])
+                trace = np.asarray(
+                    mon.trace[monitor_index], dtype=np.float32
+                )
+
+                if trace.size != base_ns:
+                    raise ValueError(f"Unexpected Monitor samples at {key}")
+
+                monitor_map[loc[0], loc[1], :] = trace
+
+            # Preserve Monitor-only traces separately.
+            extra_count = pair_index.monitor_only_count
+            extra_shape = (extra_count, base_ns)
+
+            extra_data = np.lib.format.open_memmap(
+                output_dir / "monitor_only_traces.npy",
+                mode="w+", dtype=np.float32, shape=extra_shape
+            )
+            extra_keys = np.asarray(
+                pair_index.monitor_only_keys, dtype=np.int32
+            )
+            np.save(output_dir / "monitor_only_keys.npy", extra_keys)
+
+            for out_index, source_index in enumerate(
+                pair_index.monitor_only_indices
+            ):
+                extra_data[out_index, :] = np.asarray(
+                    mon.trace[source_index], dtype=np.float32
+                )
+
+            baseline_map.flush()
+            monitor_map.flush()
+            extra_data.flush()
+
+            metadata = {
+                "baseline_source": baseline_path.name,
+                "monitor_source": monitor_path.name,
+                "pairing_key": ["inline", "crossline"],
+                "array_axes": ["inline", "crossline", "sample"],
+                "shape": list(shape),
+                "inline_ids": inline_ids,
+                "crossline_ids": crossline_ids,
+                "baseline_trace_count": len(pair_index.baseline_keys),
+                "paired_trace_count": len(pair_index.baseline_keys),
+                "monitor_only_trace_count": extra_count,
+                "missing_grid_cell_count": int(missing_mask.sum()),
+                "sample_count": base_ns,
+                "sample_interval_us": base_dt,
+                "sample_domain": "unknown",
+                "sample_origin": None,
+                "baseline_finite_fraction": float(
+                    np.isfinite(baseline_map).mean()
+                ),
+                "monitor_finite_fraction": float(
+                    np.isfinite(monitor_map).mean()
+                ),
+                "monitor_only_archive": "monitor_only_traces.npy",
+                "monitor_only_keys": "monitor_only_keys.npy",
+                "coordinate_method": "Baseline inline/crossline grid",
+                "monitor_coordinate_headers_used": False,
+                "trace_key_pairing_verified": True,
+                "physical_4d_registration": "not established",
+                "source_sha256": "not calculated",
+            }
+
+            np.save(output_dir / "missing_trace_mask.npy", missing_mask)
+
+            with (output_dir / "metadata.json").open("w") as stream:
+                json.dump(metadata, stream, indent=2)
+
+        except Exception:
+            # Leave the incomplete directory for inspection/recovery.
+            raise
+
+    baseline_metadata = SurveyMetadata(
+        survey_id="challenge3_baseline",
+        label="Challenge 3 Baseline",
+        dimensions=shape,
+        inline_units="SEG-Y inline identifier",
+        crossline_units="SEG-Y crossline identifier",
+        sample_interval=base_dt,
+        sample_interval_units="microseconds",
+        sample_units="unknown",
+        sample_axis_domain="unknown",
+        synthetic=False,
+        source_metadata={
+            **metadata,
+            "source_file_name": baseline_path.name,
+            "spatial_geometry_compatible": True,
+            "paired_grid_available": True,
+        },
+    )
+
+    monitor_metadata = SurveyMetadata(
+        survey_id="challenge3_monitor",
+        label="Challenge 3 Monitor",
+        dimensions=shape,
+        inline_units="SEG-Y inline identifier",
+        crossline_units="SEG-Y crossline identifier",
+        sample_interval=mon_dt,
+        sample_interval_units="microseconds",
+        sample_units="unknown",
+        sample_axis_domain="unknown",
+        synthetic=False,
+        source_metadata={
+            **metadata,
+            "source_file_name": monitor_path.name,
+            "spatial_geometry_compatible": True,
+            "paired_grid_available": True,
+            "physical_4d_registration_verified": False,
+        },
+    )
+
+    missing = np.load(output_dir / "missing_trace_mask.npy", mmap_mode="r")
+
+    return (
+        SeismicVolume(
+            np.load(output_dir / "baseline.npy", mmap_mode="r"),
+            baseline_metadata,
+            missing,
+        ),
+        SeismicVolume(
+            np.load(output_dir / "monitor.npy", mmap_mode="r"),
+            monitor_metadata,
+            missing,
+        ),
+    )

@@ -3,6 +3,30 @@
 import numpy as np
 
 
+def display_slice(values: np.ndarray, max_axis: int = 600) -> np.ndarray:
+    """Return a display-only 2D view reduced to at most max_axis per axis."""
+    data = np.asarray(values)
+    if data.ndim != 2 or max_axis < 1:
+        raise ValueError("expected a 2D array and positive display limit")
+    row_stride = max(1, int(np.ceil(data.shape[0] / max_axis)))
+    col_stride = max(1, int(np.ceil(data.shape[1] / max_axis)))
+    return data[::row_stride, ::col_stride]
+
+
+def display_mask(mask: np.ndarray, max_axis: int = 600) -> np.ndarray:
+    """Conservatively reduce a boolean mask: a display cell is true if any source cell is true."""
+    data = np.asarray(mask, dtype=bool)
+    if data.ndim != 2 or max_axis < 1:
+        raise ValueError("expected a 2D mask and positive display limit")
+    row_stride = max(1, int(np.ceil(data.shape[0] / max_axis)))
+    col_stride = max(1, int(np.ceil(data.shape[1] / max_axis)))
+    out_rows = (data.shape[0] + row_stride - 1) // row_stride
+    out_cols = (data.shape[1] + col_stride - 1) // col_stride
+    padded = np.zeros((out_rows * row_stride, out_cols * col_stride), dtype=bool)
+    padded[:data.shape[0], :data.shape[1]] = data
+    return padded.reshape(out_rows, row_stride, out_cols, col_stride).any(axis=(1, 3))
+
+
 def display_volume(volume: np.ndarray, max_axis: int = 48) -> np.ndarray:
     data = np.asarray(volume)
     if data.ndim != 3 or max_axis < 1:

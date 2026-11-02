@@ -258,57 +258,165 @@ class TraceKeyComparison:
     monitor_index_for_baseline: tuple[int | None, ...]
 
     def to_dict(self) -> dict[str, Any]:
-        return {**self.report.to_dict(), "monitor_index_for_baseline": list(self.monitor_index_for_baseline)}
+        return {
+            **self.report.to_dict(),
+            "monitor_index_for_baseline": list(self.monitor_index_for_baseline),
+        }
 
 
-def compare_trace_keys(baseline_keys: Iterable[tuple[int, int]], monitor_keys: Iterable[tuple[int, int]], *,
-                       baseline_name: str = "baseline", monitor_name: str = "monitor") -> TraceKeyComparison:
-    """Compare explicit (inline,crossline) keys and return a reorder map; duplicates/missing keys fail."""
+def compare_trace_keys(
+    baseline_keys: Iterable[tuple[int, int]],
+    monitor_keys: Iterable[tuple[int, int]],
+    *,
+    baseline_name: str = "baseline",
+    monitor_name: str = "monitor",
+) -> TraceKeyComparison:
+    """Compare unique (inline, crossline) keys and construct a Baseline-to-Monitor index map.
+
+    Additional Monitor-only keys are retained and reported as non-blocking.
+    Missing Monitor counterparts for Baseline keys and duplicate/invalid keys
+    remain blocking because they prevent unambiguous complete Baseline pairing.
+    """
     baseline = tuple((int(il), int(xl)) for il, xl in baseline_keys)
     monitor = tuple((int(il), int(xl)) for il, xl in monitor_keys)
     findings: list[ValidationFinding] = []
+    inputs = (baseline_name, monitor_name)
+
     if not baseline or not monitor:
-        findings.append(_finding("trace_key_presence", "fail", "One or both surveys contain no usable inline/crossline keys.",
-                                 [baseline_name, monitor_name], metadata={"baseline_count": len(baseline), "monitor_count": len(monitor)},
-                                 action="Inspect trace headers and axis mapping; no pairing is permitted without non-empty trace keys.", blocking=True))
-    zero_id_count_a = sum(il == 0 or xl == 0 for il, xl in baseline)
-    zero_id_count_b = sum(il == 0 or xl == 0 for il, xl in monitor)
-    if zero_id_count_a or zero_id_count_b:
-        findings.append(_finding("trace_key_values", "fail", "Zero inline or crossline identifiers are not accepted as valid survey keys.",
-                                 [baseline_name, monitor_name], metadata={"baseline_zero_id_count": zero_id_count_a,
-                                                                          "monitor_zero_id_count": zero_id_count_b},
-                                 action="Verify the trace-header mapping and obtain authoritative bin identifiers.", blocking=True))
+        findings.append(_finding(
+            "trace_key_presence", "fail",
+            "One or both surveys contain no usable inline/crossline keys.",
+            inputs,
+            metadata={
+                "baseline_count": len(baseline),
+                "monitor_count": len(monitor),
+            },
+            action="Inspect trace headers; pairing requires non-empty trace keys.",
+            blocking=True,
+        ))
+        return TraceKeyComparison(
+            ValidationReport(tuple(findings), {
+                "baseline_trace_count": len(baseline),
+                "monitor_trace_count": len(monitor),
+                "matched_trace_count": 0,
+                "baseline_only_count": len(baseline),
+                "monitor_only_count": len(monitor),
+            }),
+            tuple(None for _ in baseline),
+        )
+
+    zero_a = sum(il == 0 or xl == 0 for il, xl in baseline)
+    zero_b = sum(il == 0 or xl == 0 for il, xl in monitor)
+
+    if zero_a or zero_b:
+        findings.append(_finding(
+            "trace_key_values", "fail",
+            "Zero inline or crossline identifiers are not valid survey keys.",
+            inputs,
+            metadata={
+                "baseline_zero_id_count": zero_a,
+                "monitor_zero_id_count": zero_b,
+            },
+            action="Verify the SEG-Y trace-header mapping.",
+            blocking=True,
+        ))
+
     duplicate_a = len(baseline) - len(set(baseline))
     duplicate_b = len(monitor) - len(set(monitor))
+
     if duplicate_a or duplicate_b:
-        findings.append(_finding("trace_key_uniqueness", "fail", "Duplicate inline/crossline keys prevent unambiguous trace correspondence.",
-                                 [baseline_name, monitor_name], metadata={"baseline_duplicate_count": duplicate_a,
-                                                                          "monitor_duplicate_count": duplicate_b},
-                                 action="Resolve duplicate trace keys from source headers; do not pair by file order.", blocking=True))
-    map_b = {key: index for index, key in enumerate(monitor)}
-    missing_monitor = sorted(set(baseline) - set(monitor))
-    missing_baseline = sorted(set(monitor) - set(baseline))
-    if missing_monitor or missing_baseline:
-        findings.append(_finding("trace_key_coverage", "fail", "Baseline and monitor do not contain identical trace-key sets.",
-                                 [baseline_name, monitor_name], metadata={"baseline_only_count": len(missing_monitor),
-                                                                          "monitor_only_count": len(missing_baseline),
-                                                                          "baseline_only_examples": missing_monitor[:10],
-                                                                          "monitor_only_examples": missing_baseline[:10]},
-                                 action="Resolve coverage/grid differences explicitly and construct a documented common-grid mask.", blocking=True))
-    elif not duplicate_a and not duplicate_b and baseline == monitor:
-        findings.append(_finding("trace_key_order", "pass", "Trace-key sets and file ordering match exactly.",
-                                 [baseline_name, monitor_name], metadata={"trace_count": len(baseline)}))
-    elif not duplicate_a and not duplicate_b:
-        findings.append(_finding("trace_key_order", "warning", "Trace-key sets match but file order differs; reindex by inline/crossline keys before comparing samples.",
-                                 [baseline_name, monitor_name], metadata={"trace_count": len(baseline)},
-                                 action="Apply the returned monitor index map, then verify axis and coordinate geometry."))
-    mapping = tuple(map_b.get(key) for key in baseline)
-    if not findings:
-        findings.append(_finding("trace_key_coverage", "pass", "Trace-key correspondence is complete and unique.", [baseline_name, monitor_name]))
-    return TraceKeyComparison(ValidationReport(tuple(findings), {
-        "baseline_trace_count": len(baseline), "monitor_trace_count": len(monitor),
-        "matched_trace_count": sum(value is not None for value in mapping),
-    }), mapping)
+        findings.append(_finding(
+            "trace_key_uniqueness", "fail",
+            "Duplicate inline/crossline keys prevent unambiguous trace correspondence.",
+            inputs,
+            metadata={
+                "baseline_duplicate_count": duplicate_a,
+                "monitor_duplicate_count": duplicate_b,
+            },
+            action="Resolve duplicate keys before pairing; never pair by file order.",
+            blocking=True,
+        ))
+
+    # Construct the index map only after checking uniqueness.
+    monitor_index = {key: i for i, key in enumerate(monitor)}
+
+    baseline_only = sorted(set(baseline) - set(monitor))
+    monitor_only = sorted(set(monitor) - set(baseline))
+    common_count = len(set(baseline) & set(monitor))
+
+    if baseline_only:
+        findings.append(_finding(
+            "trace_key_coverage", "fail",
+            "Some Baseline keys have no Monitor counterpart; complete Baseline pairing is not possible.",
+            inputs,
+            metadata={
+                "baseline_only_count": len(baseline_only),
+                "baseline_only_examples": baseline_only[:10],
+                "monitor_only_count": len(monitor_only),
+                "common_key_count": common_count,
+            },
+            action="Investigate missing Monitor coverage and construct an explicitly documented common-key dataset.",
+            blocking=True,
+        ))
+    elif monitor_only:
+        findings.append(_finding(
+            "monitor_additional_coverage", "warning",
+            "Monitor contains additional unique traces beyond the complete Baseline coverage. These traces are excluded from paired analysis but must be preserved separately.",
+            inputs,
+            metadata={
+                "baseline_only_count": 0,
+                "monitor_only_count": len(monitor_only),
+                "monitor_only_examples": monitor_only[:10],
+                "common_key_count": common_count,
+            },
+            action="Retain Monitor-only traces and their headers in a separate archive for independent edge-coverage analysis.",
+            blocking=False,
+        ))
+    else:
+        findings.append(_finding(
+            "trace_key_coverage", "pass",
+            "Both surveys contain identical trace-key coverage.",
+            inputs,
+            metadata={"common_key_count": common_count},
+        ))
+
+    order_matches = baseline == monitor
+    if not order_matches:
+        findings.append(_finding(
+            "trace_key_order", "warning",
+            "File trace ordering differs. Pair samples using the returned inline/crossline index map, never ordinal trace position.",
+            inputs,
+            metadata={
+                "baseline_trace_count": len(baseline),
+                "monitor_trace_count": len(monitor),
+                "order_matches": False,
+            },
+            action="Reindex Monitor traces by the explicit trace-key mapping.",
+            blocking=False,
+        ))
+    else:
+        findings.append(_finding(
+            "trace_key_order", "pass",
+            "Trace-key ordering matches exactly.",
+            inputs,
+            metadata={"trace_count": len(baseline), "order_matches": True},
+        ))
+
+    mapping = tuple(monitor_index.get(key) for key in baseline)
+
+    return TraceKeyComparison(
+        ValidationReport(tuple(findings), {
+            "baseline_trace_count": len(baseline),
+            "monitor_trace_count": len(monitor),
+            "matched_trace_count": common_count,
+            "baseline_only_count": len(baseline_only),
+            "monitor_only_count": len(monitor_only),
+            "baseline_duplicate_count": duplicate_a,
+            "monitor_duplicate_count": duplicate_b,
+            "trace_order_matches": order_matches,
+        }),
+        mapping,
+    )
 
 
 def compare_coordinate_headers(baseline: dict[tuple[int, int], tuple[float, float, int | None]],

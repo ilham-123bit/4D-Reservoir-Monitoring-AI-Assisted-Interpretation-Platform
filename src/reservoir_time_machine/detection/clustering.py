@@ -20,19 +20,33 @@ def connected_zones(mask: np.ndarray, score: np.ndarray | None = None, *, min_si
     values = np.asarray(score, float) if score is not None else flags.astype(float)
     if values.shape != flags.shape:
         raise ValueError("score and mask shapes must match")
+    if count == 0:
+        return np.zeros(flags.shape, dtype=np.int32), []
+    # Aggregate once over the grid. The former per-component full-grid argwhere
+    # scan scaled with component count and became very slow for noisy screens.
+    component = labels.ravel()
+    flat_values = values.ravel()
+    sizes = np.bincount(component, minlength=count + 1)
+    finite = np.isfinite(flat_values)
+    score_counts = np.bincount(component[finite], minlength=count + 1)
+    score_sums = np.bincount(component[finite], weights=flat_values[finite], minlength=count + 1)
+    maxima = np.full(count + 1, -np.inf, dtype=float)
+    np.maximum.at(maxima, component[finite], flat_values[finite])
+    bounds = find_objects(labels, max_label=count)
+    keep = (sizes >= min_size)
+    keep[0] = False
+    lookup = np.zeros(count + 1, dtype=np.int32)
+    kept_ids = np.flatnonzero(keep)
+    lookup[kept_ids] = np.arange(1, len(kept_ids) + 1, dtype=np.int32)
+    filtered = lookup[labels]
     zones = []
-    filtered = np.zeros(flags.shape, dtype=np.int32)
-    next_label = 1
-    for original in range(1, count + 1):
-        points = np.argwhere(labels == original)
-        if len(points) < min_size:
-            continue
-        filtered[labels == original] = next_label
-        strength = values[labels == original]
-        lo, hi = points.min(axis=0), points.max(axis=0)
-        zones.append(DetectedZone(next_label, len(points), tuple((int(a), int(b)) for a, b in zip(lo, hi)),
-                                  float(np.nanmean(strength)), float(np.nanmax(strength))))
-        next_label += 1
+    for new_id, original in enumerate(kept_ids, start=1):
+        region = bounds[int(original) - 1]
+        region_bounds = tuple((int(part.start), int(part.stop - 1)) for part in region)
+        n_scores = int(score_counts[original])
+        mean_score = float(score_sums[original] / n_scores) if n_scores else float("nan")
+        max_score = float(maxima[original]) if n_scores else float("nan")
+        zones.append(DetectedZone(new_id, int(sizes[original]), region_bounds, mean_score, max_score))
     return filtered, zones
 
 
