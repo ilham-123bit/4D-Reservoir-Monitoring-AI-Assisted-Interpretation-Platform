@@ -1,45 +1,21 @@
-# Geometry, integrity, and repeatability validation
+# Quality control and validation
 
-## Report shape
+Quality checks determine whether measurements are suitable for paired calculations and how much support is available. They do not establish a geological cause.
 
-Validation functions return machine-readable reports with an aggregate `pass`, `warning`, or `fail`, a `can_proceed` gate, metadata, and findings. Each finding includes a stable `check_id`, explanation, affected input(s), relevant metadata, recommended corrective action, and a `blocking` flag. The report structure is specified by [`validation-report.schema.json`](../schemas/validation-report.schema.json).
+## Survey checks
 
-Warnings can be blocking when unknown metadata makes a comparison unsafe. A report with a warning is not automatically accepted; inspect `can_proceed` and each blocking finding. `validate_pair` preserves its exception-based calling interface but rejects when any check fails or blocks. Call `compare_volume_geometry` first when a serializable report is required.
+The ingestion workflow checks file readability, trace/sample counts, header identifiers, geometry, sample encoding, finite values and missing trace coverage. Baseline and Monitor trace keys are compared explicitly. Monitor-only traces and cells missing from the Baseline grid are retained in inventory rather than silently treated as paired measurements.
 
-## SEG-Y integrity
+Pairing on the Baseline grid supports preliminary screening. Physical registration requires verified survey coordinates and an appropriate registration workflow; matching inline/crossline identifiers alone is insufficient.
 
-`inspect_segy_integrity` uses standard-library reads of the 3,200-byte textual header and 400-byte binary header. For supported fixed-length SEG-Y records, record size is `240 + samples_per_trace * bytes_per_sample`, with byte width selected from the declared SEG-Y format code. It honors a non-negative extended textual header count and calculates the first trace byte offset. Unknown/variable extended-header layouts and variable-length traces are blocking warnings rather than guessed offsets.
+## Attribute checks
 
-The check reports exact complete-record count, trailing header/sample bytes, first incomplete offset, and bytes needed to finish a partial record. It can compare a supplied expected total trace count, expected file size, and trusted expected SHA-256. Hashing streams bounded chunks and never writes the source. Size/time are checked for stability during inspection. A complete record boundary alone does not prove that no whole traces are missing; without trusted completeness metadata, that uncertainty is explicitly blocking for loading.
+Difference, absolute difference, RMS and NRMS calculations use documented axis order and valid paired samples. Missing support is masked. Windowed outputs include support counts; windows without valid measurements are unavailable rather than zero. Numerical regression tests compare selected-sample, chunked and reference calculations on controlled fixtures.
 
-## Trace correspondence and geometry
+## Detection checks
 
-Trace correspondence uses unique `(inline,crossline)` keys. Duplicate keys, zero IDs, empty key sets, or different key coverage fail. Equal key sets in different file order produce a warning and a monitor-index reordering map; comparison must reindex by keys, never file sequence numbers.
+Statistical thresholds, model scores, feature scaling and component rules are recorded with the analysis. Connected-region tests verify member identity and representative coordinates. A display mask should preserve isolated detections and missing coverage when aggregating cells. Detector agreement is descriptive and does not imply independent confirmation.
 
-For surveys with different trace coverage, use the separate [coverage matching workflow](trace_coverage_matching.md). It preserves the Baseline-ordered common mapping and returns Monitor-only keys and indices separately. The legacy strict pair validator continues to reject unequal key sets; use the lazy key-matched trace iterator only after independent geometry and sample-axis gates pass. Matching identifiers do not establish physical registration or waveform comparability.
+## Validation scope
 
-Volume geometry checks compare dimensions, axis labels/order, explicit inline/crossline ID arrays, sample interval and units, declared sample domain and sample units, sample origin and units, and explicit geometry-verification state. Unknown sample domain, origin, identifiers, or unverified survey geometry blocks paired calculations. A coordinate reference mismatch fails. Missing CRS is a non-blocking warning for verified bin-index analysis but disables map-space interpretation and well joins.
-
-SEG-Y coordinate checks apply the signed coordinate scalar and compare X/Y at matched bins, while also comparing coordinate-unit codes. Undefined coordinate units with non-zero coordinates block spatial use. Matching coordinate headers do not establish a CRS; an authoritative CRS/navigation source remains necessary for map-space operations.
-
-## Volume QC
-
-`quality_report` returns finite-sample availability, NaN and signed-infinity counts, traces with non-finite samples, fully unavailable traces, zero-energy traces, amplitude range/RMS, trace RMS distribution, and a nested validation report. The amplitude-to-standard-deviation value is a descriptive proxy, not calibrated SNR.
-
-`repeatability_report` processes along inline chunks and computes:
-
-- Paired finite sample count and fraction using the joint finite mask.
-- Global Pearson waveform correlation over all paired finite samples after global mean removal.
-- Per-trace Pearson correlation after per-trace mean removal; zero-variance/insufficient traces have undefined correlation, not a fabricated zero.
-- Global and per-trace NRMS: `200 * RMS(B-M) / (RMS(B)+RMS(M))` over paired finite samples. A zero denominator returns 0; no finite pairs fails.
-- Local tile summaries over configurable inline/crossline tiles, including valid trace count, median trace correlation, and median trace NRMS.
-
-These are descriptive repeatability metrics, not a universal pass/fail quality threshold. Genuine production-related change, acquisition differences, noise, phase, and residual mistie can all affect them. Local tile aggregates are diagnostics, not spatially calibrated thresholds. NaN/Inf pairs are excluded jointly and coverage is reported.
-
-## Temporal registration
-
-`estimate_temporal_registration` estimates bounded integer trace lags over pairwise finite overlap. It now rejects traces with insufficient overlap, zero energy, or a best correlation below configurable `min_correlation`. Rejected traces have `accepted=False`, NaN correlation if no estimate was possible, and a reason. Optional integer correction uses NaN edge padding; it never wraps or extrapolates edge values. This is not spatial registration, sub-sample registration, or a validated survey-level correction.
-
-## Current validation limits
-
-The unit tests use tiny constructed SEG-Y headers and mathematical arrays only. They validate arithmetic and software gates, not a competition dataset. The SEG-Y adapter and dashboard cannot be integration-validated until authorized inputs and optional reader/UI dependencies are available. Schema files are JSON-parsed in tests, but full JSON Schema semantic validation is pending an installed validator. No geological finding or actual-data performance is claimed.
+Software tests, controlled numerical fixtures, bounded real-data checks, application rendering, browser interaction and geological validation are separate evidence classes. Passing a software test does not prove survey-wide accuracy or geological validity. Current public results reflect limited analyzed coverage; full-survey statistics and validated well ties are N/A.

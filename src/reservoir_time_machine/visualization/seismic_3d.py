@@ -9,7 +9,7 @@ def volume_figure(volume: np.ndarray, title: str, *, inline: int | None = None,
                   crossline: int | None = None, sample: int | None = None,
                   missing_trace_mask: np.ndarray | None = None,
                   max_axis: int = 160, colorscale: str = "RdBu",
-                  value_range: tuple[float, float] | None = None):
+                  value_range: tuple[float, float] | None = None, finding_context=None):
     """Render three linked section planes; all coordinates remain sample indices."""
     import plotly.graph_objects as go
 
@@ -65,6 +65,14 @@ def volume_figure(volume: np.ndarray, title: str, *, inline: int | None = None,
     fig.add_trace(go.Surface(x=xx, y=yy, z=np.full_like(xx, sample), surfacecolor=planes[2],
                              cmin=limits[0], cmax=limits[1], colorscale=colorscale,
                              showscale=False, name="Sample section", connectgaps=False))
+    if finding_context is not None:
+        result,finding=finding_context
+        i,x,s=finding['representative'];i0,_,x0,_=result['bounds']
+        if result['labels'][i-i0,x-x0]!=finding['label']:raise ValueError('Invalid finding representative')
+        rows,cols=np.nonzero(result['labels']==finding['label'])
+        fig.add_trace(go.Scatter3d(x=rows+i0,y=cols+x0,z=np.full(rows.shape,s),mode='markers',
+            marker={'size':3,'color':'#31edc2','opacity':.55},name='2D classified footprint · not a 3D body'))
+        fig.add_trace(go.Scatter3d(x=[i],y=[x],z=[s],mode='markers',marker={'size':8,'color':'#ffb000'},name='Finding representative'))
     fig.update_layout(title=title, scene={"xaxis_title": "Inline index", "yaxis_title": "Crossline index",
                                           "zaxis_title": "Sample Index", "aspectmode": "data",
                                           "uirevision": "rtm-camera"},

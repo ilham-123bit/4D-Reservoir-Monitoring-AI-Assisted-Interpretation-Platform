@@ -1,5 +1,5 @@
-# Legacy synthetic prototype modules
+# Synthetic validation data
 
-The earlier development phase included a fictional seismic-like volume generator, demo dashboard, and benchmark tests. Those files are retained for source-history and implementation reference in the legacy configuration/model definitions, `src/reservoir_time_machine/synthetic/`, `src/reservoir_time_machine/evaluation/benchmark.py`, `legacy/`, and `tests/legacy_synthetic/`.
+Small synthetic arrays and controlled fixtures are used to test numerical behavior, masks, geometry, attribute calculations, detector interfaces and visualization logic. They make software checks reproducible without substituting fabricated values for Challenge 3 measurements.
 
-They are not part of the active application workflow, are not used as a fallback when competition files are missing, and are excluded from the default test collection. Do not use their generated data or metrics as Challenge 3 evidence, geological validation, or competition results. The current public application consumes only configured source files and otherwise displays a data-unavailable message.
+Synthetic results are labeled as tests and are not geological findings. Real-data validation is reported separately with its source, scope and coverage. A passing synthetic test demonstrates the tested software behavior only; it does not establish field performance or reservoir interpretation.

@@ -888,6 +888,9 @@ def load_challenge3_paired_volumes(
             ):
                 raise ValueError("Missing-trace count disagrees with metadata")
 
+            from .cache_identity import validate_cache_index_metadata
+            validate_cache_index_metadata(metadata, missing, monitor_only_keys)
+
             arrays = (
                 baseline_data,
                 monitor_data,
@@ -918,7 +921,8 @@ def load_challenge3_paired_volumes(
             source_metadata={
                 **metadata,
                 "source_file_name": baseline_path.name,
-                "spatial_geometry_compatible": True,
+                "trace_grid_compatible": True,
+                "spatial_geometry_compatible": False,
                 "paired_grid_available": True,
             },
         )
@@ -937,7 +941,8 @@ def load_challenge3_paired_volumes(
             source_metadata={
                 **metadata,
                 "source_file_name": monitor_path.name,
-                "spatial_geometry_compatible": True,
+                "trace_grid_compatible": True,
+                "spatial_geometry_compatible": False,
                 "paired_grid_available": True,
                 "physical_4d_registration_verified": False,
             },
@@ -1115,7 +1120,8 @@ def load_challenge3_paired_volumes(
         source_metadata={
             **metadata,
             "source_file_name": baseline_path.name,
-            "spatial_geometry_compatible": True,
+            "trace_grid_compatible": True,
+                "spatial_geometry_compatible": False,
             "paired_grid_available": True,
         },
     )
@@ -1134,7 +1140,8 @@ def load_challenge3_paired_volumes(
         source_metadata={
             **metadata,
             "source_file_name": monitor_path.name,
-            "spatial_geometry_compatible": True,
+            "trace_grid_compatible": True,
+                "spatial_geometry_compatible": False,
             "paired_grid_available": True,
             "physical_4d_registration_verified": False,
         },

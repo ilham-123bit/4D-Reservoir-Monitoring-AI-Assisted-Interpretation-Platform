@@ -195,53 +195,38 @@ def _inspect_segy(path: Path) -> dict[str, Any]:
 
 def _inspect_xlsx(path: Path) -> dict[str, Any]:
     if not _optional_dependency("openpyxl"):
-        return {"status": "not_inspected", "reason": "Install the competition-data extra (openpyxl) on the HPC."}
-    from openpyxl import load_workbook
-
-    workbook = load_workbook(path, read_only=True, data_only=True)
+        return {"status": "not_inspected", "reason": "Install openpyxl on the HPC."}
+    from ..data_ingest.well_information import inspect_well_information, load_well_information
+    structure = inspect_well_information(path)
     sheets = []
-    for sheet in workbook.worksheets:
-        rows = sheet.iter_rows(values_only=True)
-        first = next(rows, ())
-        columns = [str(value).strip() if value is not None else "" for value in first]
-        nonempty_counts = [0] * len(columns)
-        row_count = 0
-        for row in rows:
-            if any(value is not None for value in row):
-                row_count += 1
-            for index, value in enumerate(row[:len(columns)]):
-                nonempty_counts[index] += int(value is not None and str(value).strip() != "")
+    for item in structure['sheets']:
+        records = load_well_information(path, column_mapping={}, sheet_name=item['sheet'],
+                                        header_row=item['header_row'])
+        columns = item['columns']
         normalized = [column.casefold() for column in columns]
-        sheets.append({"name": sheet.title, "columns": columns, "data_row_count": row_count,
-                       "nonempty_value_counts_by_column": dict(zip(columns, nonempty_counts)),
+        sheets.append({"name": item['sheet'], "columns": columns,
+                       "header_row": item['header_row'], "data_row_count": len(records),
+                       "nonempty_value_counts_by_column": {
+                           c: sum(r['source_values'].get(c) not in (None, '') for r in records) for c in columns},
                        "possible_well_id_columns": [columns[i] for i, name in enumerate(normalized)
                            if any(token in name for token in ("well", "uwi", "name", "id"))],
                        "possible_coordinate_columns": [columns[i] for i, name in enumerate(normalized)
                            if any(token in name for token in ("x", "y", "north", "east", "coord", "elev", "datum", "crs"))]})
-    workbook.close()
     return {"status": "inspected", "sheet_count": len(sheets), "sheets": sheets,
             "source_values_included": False}
 
 
 def _inspect_text_table(path: Path) -> dict[str, Any]:
-    lines = [line.strip() for line in path.read_text(errors="replace").splitlines() if line.strip()]
-    comments = [line for line in lines if line.startswith(("#", "!", ";"))]
-    content = [line for line in lines if line not in comments]
-    if not content:
-        return {"status": "inspected", "row_count": 0, "columns": [], "header_detected": False}
-    delimiter = "\t" if "\t" in content[0] else ("," if "," in content[0] else None)
-    split = (lambda line: [part.strip() for part in line.split(delimiter)]) if delimiter else (lambda line: re.split(r"\s+", line))
-    first = split(content[0])
-    header_detected = any(re.search(r"[A-Za-z]", value) for value in first)
-    columns = first if header_detected else [f"column_{i+1}" for i in range(len(first))]
-    rows = [split(line) for line in (content[1:] if header_detected else content)]
-    metadata_terms = sorted({term.lower() for line in comments for term in
+    from ..data_ingest.well_tables import read_well_table
+    table = read_well_table(path)
+    metadata_terms = sorted({term.lower() for line in table.comment_lines for term in
         re.findall(r"\b(MD|TVD|TWT|OWT|two[- ]way|one[- ]way|depth|time|unit|datum|reference|ms|msec|s|sec|ft|feet|m|metres?|degrees?|azimuth|inclination|northing|easting)\b", line, re.IGNORECASE)})
-    return {"status": "inspected", "delimiter": "whitespace" if delimiter is None else delimiter,
-            "header_detected": header_detected, "columns": columns,
-            "data_row_count": len(rows), "row_width_mismatch_count": sum(len(row) != len(columns) for row in rows),
+    return {"status": "inspected", "columns": list(table.columns),
+            "header_detected": table.header_origin != 'generated',
+            "header_origin": table.header_origin, "data_row_count": len(table.rows),
+            "row_width_mismatch_count": table.row_width_mismatch_count,
             "missing_value_token_count": sum(value.casefold() in {"", "na", "nan", "null", "-999.25"}
-                                               for row in rows for value in row),
+                                             for row in table.rows for value in row),
             "comment_metadata_terms": metadata_terms, "sample_values_included": False}
 
 

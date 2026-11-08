@@ -129,6 +129,6 @@ class GemmaEvidenceProvider:
                 "AI provider transmission is disabled for restricted, confidential, or unknown data unless explicitly authorized"
             )
         packet_json = packet.to_json(max_bytes=self.max_payload_bytes)
-        from .gemma_client import explain_evidence
+        from ..llm.gemma_client import explain_evidence
 
         return explain_evidence(json.loads(packet_json), self.settings, max_payload_bytes=self.max_payload_bytes)

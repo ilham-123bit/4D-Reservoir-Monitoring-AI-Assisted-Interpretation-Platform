@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
 from ..models import ChangeAttributes
-from .difference import calculate_attributes
+from .difference import calculate_attributes, _validate_parameters
 
 
 _FIELDS = ("signed_difference", "absolute_difference", "normalized_difference",
-           "rms_baseline", "rms_monitor", "nrms")
+           "rms_baseline", "rms_monitor", "nrms", "paired_sample_count")
 
 
 def calculate_attributes_chunked(baseline: np.ndarray, monitor: np.ndarray, output_directory: str | Path, *,
@@ -26,9 +25,13 @@ def calculate_attributes_chunked(baseline: np.ndarray, monitor: np.ndarray, outp
     Spatial sample-independent attributes are chunk-equivalent to ``calculate_attributes``.
     """
     before, after = np.asanyarray(baseline), np.asanyarray(monitor)
-    if before.ndim != 3 or before.shape != after.shape:
+    if before.ndim != 3 or before.shape != after.shape or 0 in before.shape:
         raise ValueError("paired inputs must be matching 3D volumes")
-    if inline_chunk < 1 or crossline_chunk < 1:
+    _validate_parameters(window_samples, epsilon)
+    if np.dtype(output_dtype).kind != "f":
+        raise ValueError("attribute output_dtype must be floating point to preserve NaN")
+    if (any(isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer))
+            for n in (inline_chunk, crossline_chunk)) or inline_chunk < 1 or crossline_chunk < 1):
         raise ValueError("spatial chunk sizes must be positive")
     target = Path(output_directory)
     target.mkdir(parents=True, exist_ok=True)
@@ -36,7 +39,7 @@ def calculate_attributes_chunked(baseline: np.ndarray, monitor: np.ndarray, outp
     existing = [str(path) for path in paths.values() if path.exists()]
     if existing:
         raise FileExistsError(f"Refusing to overwrite analytical outputs: {', '.join(existing)}")
-    outputs = {name: np.lib.format.open_memmap(path, mode="w+", dtype=output_dtype, shape=before.shape)
+    outputs = {name: np.lib.format.open_memmap(path, mode="w+", dtype=np.int32 if name == "paired_sample_count" else output_dtype, shape=before.shape)
                for name, path in paths.items()}
     try:
         ni, nx, _ = before.shape

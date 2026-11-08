@@ -1,25 +1,29 @@
-# Challenge 3 standardized data dictionary
+# Challenge 3 data dictionary
 
-This document defines application-side fields. It does not assert that source files have been inspected or that every field is populated.
+This dictionary describes the fields used by the analysis. A field may remain unavailable when the source file does not provide a verified value.
 
-## Seismic volume
+## Seismic survey
 
-| Field | Meaning | Source/handling |
-|---|---|---|
-| `data` | 3D amplitude samples | Standardized array order `(inline, crossline, sample)` |
-| `dimensions` | Number of indices on each axis | Measured from actual SEG-Y traces and sample axis |
-| `inline`, `crossline` | Header identifiers | Preserved as identifiers; not geographic coordinates |
-| `sample_interval` | Raw binary-header sample interval value | Preserved with its header-unit label; verify SEG-Y revision/project documentation |
-| `sample_units`, `sample_axis_domain` | Time/depth meaning | Remain unverified until source documentation establishes domain and units |
-| `missing_trace_mask` | Absent inline/crossline trace locations | Filled with NaN in standardized arrays, identified separately |
-| `coordinate_scalar`, `coordinate_units` | SEG-Y coordinate header metadata | Inspected and preserved; no CRS or transformation assumed |
+| Field | Meaning |
+|---|---|
+| Baseline / Monitor | The two acquired survey vintages compared in a 4D workflow. |
+| Amplitude | Recorded seismic sample value; it is not a direct measurement of fluid saturation or production. |
+| Inline / crossline | Survey trace identifiers. They are grid coordinates, not geographic positions. |
+| Sample index | Position on the stored sample axis. It is not time or depth unless source metadata establishes that domain and origin. |
+| Sample interval | Interval declared by seismic headers or authoritative metadata, with original units retained. |
+| Missing-trace mask | Locations without valid paired measurements. These are excluded from paired attributes and identified in coverage views. |
+| Coordinate reference | Coordinate values, scalar and units from headers. A CRS or transformation is used only when verified. |
 
-## Well data
+## Calculated attributes
 
-- Well inventory: source workbook headings/rows and any standardized identifier or coordinate fields after explicit column mapping.
-- Checkshot: original columns and rows retained; depth/time units, reference and one-way/two-way meaning remain unspecified until the source header/documentation supports them.
-- Deviation: original columns/rows retained; MD, inclination, azimuth, coordinate convention and units are not guessed.
-- LAS: one object per source file, with original/composite provenance, curve mnemonic, unit, description, depth index, null values and missing samples retained.
-- Markers: original rows retained; marker names/depths are not assigned formation meaning without documented support.
+- **Signed difference:** Monitor amplitude minus Baseline amplitude.
+- **Absolute difference:** Magnitude of the signed difference.
+- **RMS:** Root mean square amplitude over a stated sample window and valid support.
+- **NRMS:** Normalized repeatability measure calculated from paired samples under the documented implementation.
+- **Support count:** Number of valid paired samples contributing to a windowed calculation.
 
-Missing files/curves/columns remain explicitly missing. No absent well support information is synthesized.
+Attributes depend on the selected window, masks and preprocessing; they are not additional acquired measurements.
+
+## Well evidence
+
+Well inventory fields preserve source identifiers and declared metadata. LAS curves retain mnemonic, unit, description, depth index and null handling. Marker, checkshot and deviation records retain their source columns and units. Formation meaning, datum, coordinate reference and seismic tie are not inferred when undocumented.

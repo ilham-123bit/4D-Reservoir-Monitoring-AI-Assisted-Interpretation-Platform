@@ -29,15 +29,24 @@ def summarize_detection_agreement(outputs: Sequence[DetectionOutput]) -> dict[st
     shape = np.shape(outputs[0].mask)
     if any(np.shape(item.mask) != shape for item in outputs):
         raise ValueError("all model outputs must share the same voxel grid")
-    masks = [np.asarray(item.mask, dtype=bool) for item in outputs]
+    model_ids = [item.model_id for item in outputs]
+    if len(set(model_ids)) != len(model_ids):
+        raise ValueError("model IDs must be distinct for agreement")
+    grids = [tuple(item.input_provenance.get(k) for k in ('dataset_id', 'run_id')) for item in outputs]
+    if any(grid != grids[0] for grid in grids):
+        raise ValueError("agreement inputs have incompatible dataset/run provenance")
+    valid = [np.isfinite(item.score) for item in outputs]
+    masks = [np.asarray(item.mask, dtype=bool) & support for item, support in zip(outputs, valid)]
     pairwise = {}
     for first in range(len(masks)):
         for second in range(first + 1, len(masks)):
-            intersection = int(np.count_nonzero(masks[first] & masks[second]))
-            union = int(np.count_nonzero(masks[first] | masks[second]))
+            joint = valid[first] & valid[second]
+            intersection = int(np.count_nonzero(masks[first] & masks[second] & joint))
+            union = int(np.count_nonzero((masks[first] | masks[second]) & joint))
             pairwise[f"{outputs[first].model_id}__{outputs[second].model_id}"] = {
                 "intersection_count": intersection, "union_count": union,
-                "jaccard": intersection / union if union else 1.0,
+                "joint_valid_count": int(joint.sum()),
+                "jaccard": intersection / union if union else (1.0 if joint.any() else None),
             }
     unanimous = np.ones(shape, dtype=bool)
     any_detection = np.zeros(shape, dtype=bool)
@@ -49,7 +58,7 @@ def summarize_detection_agreement(outputs: Sequence[DetectionOutput]) -> dict[st
             "pairwise_mask_overlap": pairwise,
             "voxel_unanimous_count": int(np.count_nonzero(unanimous)),
             "voxel_any_count": int(np.count_nonzero(any_detection)),
-            "interpretation": "detector agreement is algorithmic corroboration, not geological confirmation"}
+            "interpretation": "Shared features are correlated; overlap is descriptive agreement, not independent geological confirmation"}
 
 
 def fuse_correlated_log_evidence(evidence: np.ndarray, *, null_mean: Sequence[float],

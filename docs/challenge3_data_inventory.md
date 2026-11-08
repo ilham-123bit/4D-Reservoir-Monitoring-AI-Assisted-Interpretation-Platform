@@ -1,27 +1,21 @@
-# Challenge 3 data inventory status
+# Challenge 3 data inventory
 
-## Current zero-input status
+The analysis workflow has been exercised with the Angsi Field Challenge 3 dataset. Source seismic and well files are not distributed in this repository.
 
-**No actual competition dataset is currently present in the workspace.** `Challenge3_InputData/` is absent, and the previously copied incomplete seismic files were deleted. The application must remain in its explicit no-data state until authorized replacement inputs are provided. No synthetic substitute is generated.
+## Data types used by the platform
 
-Historical local inspection artifacts are excluded from the public repository because they contain actual-data-derived metadata and visualizations. They do not establish current file availability, provenance, or validation. Do not recreate files from reports or figures.
+| Data group | Role | Required metadata |
+|---|---|---|
+| Baseline and Monitor seismic | Paired 4D response comparison | Trace identifiers, sample axis, encoding, geometry, coverage and processing provenance |
+| Well inventory | Well identity and declared attributes | Source identifiers, column meanings, units and coordinate reference where present |
+| LAS logs | Measured well curves | Curve mnemonic, units, null value, depth reference and source provenance |
+| Markers | Stratigraphic context | Marker name, depth reference, datum and declared units |
+| Checkshots and deviations | Potential depth/time and trajectory support | Well identity, units, datum, coordinate reference and measurement conventions |
 
-## Expected input inventory (contract template, not verified files)
+Availability and completeness can differ by survey or well. Missing files, curves, traces and metadata remain explicitly unavailable.
 
-The competition input contract anticipates two seismic vintages, a well inventory, and optional well support files. Actual names, counts, coverage, formats, CRS, and geometry must be checked against the replacement dataset; none are asserted here.
+## Public result scope
 
-| Data group | Required for | Format contract | Current availability |
-|---|---|---|---|
-| Baseline and monitor seismic | Paired 4D analysis | SEG-Y with verified sample encoding, headers, bin geometry, sample domain, coordinates, and integrity | Not supplied |
-| Well inventory | Well metadata | XLSX or documented CSV with explicit columns and coordinate reference | Not supplied |
-| LAS logs | Log context | LAS 2.0/3.0 with curve units, null value, depth reference, and source provenance | Not supplied |
-| Deviations | Trajectory | Documented delimited table with measured depth, angle units/conventions, datum, and CRS | Not supplied |
-| Checkshots | Depth/time relationship | Documented table with depth/time conventions, datum, units, and well ID | Not supplied |
-| Markers | Stratigraphic context | Documented delimited table with marker names, reference depth, datum, and units | Not supplied |
-| DUG attributes and interpretations | Optional integration | Validated SEG-Y, CSV/text, or supported exported product plus geometry/domain metadata | Not supplied |
+Software validation includes bounded analysis and application rendering. The demonstrated analysis covers only a sparse subset of planned tiles and does not support survey-wide statistics, calibrated global ranking, or a validated reservoir conclusion. Results reflect the analyzed survey coverage. Physical 4D registration and well-to-seismic association have not been established.
 
-See [data contract](data_contract.md) for required, optional, and conditionally required fields, formats, limitations, and output provenance.
-
-## Read-only inventory utility
-
-`scripts/inspect_challenge3.py` and the CLI `status`/`audit` commands can report availability without inventing data. A missing root or missing files must remain an explicit unavailable state. Run the audit only where authorized inputs are available and keep restricted reports in authorized storage.
+The application reports file and metadata readiness from the configured local dataset. The public repository contains code and documentation, not the Challenge 3 seismic volumes or private analysis artifacts.

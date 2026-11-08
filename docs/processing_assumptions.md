@@ -1,11 +1,14 @@
-# Processing assumptions and safeguards
+# Processing assumptions
 
-- Paired samples are compared only after SEG-Y trace order, dimensions, sample interval, and coordinate header sequences pass compatibility checks.
-- SEG-Y inline/crossline numbers are indices/identifiers, not map coordinates. No geographic CRS or well-to-seismic transform is assumed.
-- Binary-header sample interval is exposed in seconds based on the SEG-Y interval convention; confirm revision and project documentation during HPC audit.
-- Difference sign is monitor minus baseline. NRMS is `200 × RMS(B − M) / (RMS(B) + RMS(M))`; zero-energy windows return zero and windows without valid paired samples return NaN.
-- Normalization is optional and off by default. Global or trace RMS equalization can suppress real amplitude changes; inspect diagnostics before use.
-- Registration is bounded integer trace-lag cross-correlation only. It does not establish geological alignment and does not apply automatically in the dashboard.
-- MAD thresholds and connected components are screening tools. Scores are not probabilities. High NRMS or a detected zone does not establish cause.
-- Never equate amplitude/NRMS patterns with depletion, fluid movement, or remaining hydrocarbons without independent evidence.
-- Actual Challenge 3 results remain untested until inspected and reviewed on HPC and visually compared in DUG Insight.
+- The canonical array order is `(inline, crossline, sample)`; header identifiers are retained as indices.
+- Baseline and Monitor pairing by trace key supports preliminary comparison but does not establish physical 4D registration.
+- Missing traces and non-finite samples remain invalid support; they are not converted into measured zero amplitudes.
+- Difference sign is Monitor minus Baseline. Absolute difference removes the sign and should be interpreted separately.
+- RMS and NRMS are calculated over explicit sample windows using valid paired samples. Support counts accompany windowed results; unsupported windows remain unavailable.
+- Attribute values depend on sample selection, window boundaries, finite-data masks and any explicitly configured preprocessing.
+- Detection thresholds and reference populations are screening choices. Unless calibrated against suitable independent data, anomaly scores are not probabilities.
+- Display downsampling must preserve flagged or missing cells conservatively. Full-resolution analysis remains separate from display aggregation.
+- Sample indices are not seconds, two-way time, depth or stratigraphic intervals without verified origin, domain and units.
+- Well associations require verified identifiers, CRS, datum and compatible depth/time references. Unverified ties are not generated.
+
+These assumptions describe the current preliminary workflow. Survey-specific processing history and repeatability must be reviewed before interpreting an anomaly as a subsurface change.

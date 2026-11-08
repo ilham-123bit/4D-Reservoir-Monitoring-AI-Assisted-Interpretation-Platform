@@ -1,9 +1,9 @@
-# Visualization
+# Scientific visualization
 
-The active Streamlit/Plotly app reads the configured baseline and monitor SEG-Y files. It presents metadata/QC, paired volume views, selected-sample difference/NRMS maps, selected-sample MAD screening, connected components, an availability view for well support files, and an optional structured-evidence explanation.
+The application links Baseline, Monitor and difference views to a shared finding location. Selecting a finding synchronizes its inline, crossline and sample indices across the relevant pages.
 
-Full volume displays are downsampled into derived copies by the Plotly helper; the stored input arrays are unchanged. Difference and NRMS displays calculate the selected sample window rather than generating several full attribute volumes. Large input loading is memory bounded, and an explicitly configured scratch cache is the only supported memmap output.
+A finding-directed view can show the analyzed sample plane, intersecting seismic sections, the connected-component footprint, missing-data coverage and calculated attributes. The footprint is a two-dimensional screen on its analyzed sample plane; it must not be interpreted as verified 3D reservoir geometry.
 
-The endpoint animation uses actual baseline and monitor sections. Intermediate frames are linear display interpolation only, never measured observations or a verified trajectory. No well position is plotted until geometry, coordinate reference, and unit transformations have been verified from actual metadata.
+Baseline and Monitor amplitude panels use a consistent comparison scale. Difference panels use a separate signed scale centered at zero. Legends, axes and grid-index units identify what is displayed. Sample indices are not labeled as time or depth unless validated metadata establish the domain.
 
-**Execution status:** the source has not been launched in the current local environment because Streamlit and Plotly are unavailable and the dataset path is inaccessible. Dashboard startup with missing data is designed to show a clear unavailable state, but has not been run end to end here.
+Survey Transition presents measured endpoints and automatically directs the view to selected candidates. Any blended display frame is mathematical interpolation, not an acquired vintage or measured reservoir evolution. Animation communicates the observed data and spatial context; it does not depict fluid fronts or physical movement.

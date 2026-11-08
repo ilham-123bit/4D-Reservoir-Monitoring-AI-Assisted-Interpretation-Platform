@@ -20,8 +20,8 @@ __pycache__/
 /Challenge3_InputData/
 /Challenge3_InputData/**
 /reports/
-/docs/challenge3_geometry_report.md
-/docs/challenge3_well_data_report.md
+/docs/*_geometry_report.md
+/docs/*_well_data_report.md
 /outputs/
 /logs/
 /artifacts/
@@ -60,3 +60,8 @@ __pycache__/
 !.env.example
 *.pem
 *.key
+
+# Local-only technical records and operational files.
+/docs/phase*_implementation.md
+/docs/phase*_gemma.md
+/docs/phase*_workflow.md

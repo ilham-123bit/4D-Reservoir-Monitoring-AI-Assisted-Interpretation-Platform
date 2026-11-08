@@ -3,6 +3,39 @@
 import numpy as np
 
 
+def display_coordinates(shape: tuple[int, int], max_axis: int = 600) -> tuple[np.ndarray, np.ndarray]:
+    """Return (x, y) source indices shared by strided values and pooled mask bins."""
+    if len(shape) != 2 or any(n < 1 for n in shape) or max_axis < 1:
+        raise ValueError("expected a nonempty 2D shape and positive display limit")
+    strides = tuple(max(1, int(np.ceil(n / max_axis))) for n in shape)
+    return np.arange(0, shape[1], strides[1]), np.arange(0, shape[0], strides[0])
+
+
+def display_region(labels: np.ndarray, region_id: int, max_axis: int = 600) -> np.ndarray:
+    """Pool only this region's boolean membership, never aggregate integer IDs.
+
+    Different regions may occupy the same display bin. A pooled bin indicates
+    presence, not topology or exclusive ownership; full-resolution IDs are retained.
+    """
+    if region_id < 1:
+        raise ValueError("region_id must be positive")
+    return display_mask(np.asarray(labels) == region_id, max_axis)
+
+
+def region_representative(labels: np.ndarray, zone, score: np.ndarray) -> tuple[int, ...]:
+    """Choose the strongest finite component member; ties use source-array order."""
+    if np.shape(labels) != np.shape(score):
+        raise ValueError("labels and score must share a grid")
+    bounds = tuple(slice(lo, hi + 1) for lo, hi in zone.bounding_box)
+    members = np.asarray(labels[bounds]) == zone.label
+    values = np.asarray(score[bounds])
+    eligible = members & np.isfinite(values)
+    if not eligible.any():
+        raise ValueError("selected region has no finite evidence member")
+    local = np.unravel_index(np.argmax(np.where(eligible, values, -np.inf)), members.shape)
+    return tuple(int(index + part.start) for index, part in zip(local, bounds))
+
+
 def display_slice(values: np.ndarray, max_axis: int = 600) -> np.ndarray:
     """Return a display-only 2D view reduced to at most max_axis per axis."""
     data = np.asarray(values)

@@ -1,36 +1,23 @@
-# Architecture and implementation status
+# Platform architecture
 
-## Active data path and zero-input behavior
+Reservoir Time Machine organizes its workflow around a shared finding: a candidate seismic response with a stable identifier, source-grid location, analysis scope, evidence and limitations.
 
-`settings.py` obtains the authorized dataset root and memory settings from environment variables. `data_audit/` inventories expected inputs and extracts privacy-conscious metadata. `data_ingest/segy_loader.py` checks paired SEG-Y trace/sample geometry and standardizes data as `(inline, crossline, sample)`. `data_ingest/` also contains explicit spreadsheet, LAS, and text-table adapters. The `SeismicVolume` and `SurveyMetadata` types are shared by loading, processing, and display code.
+## Data and analysis
 
-The active UI (`app.py`) loads supplied baseline/monitor files only. If required inputs are missing, it shows a no-data state, lists missing paths, links to the data contract, and stops before creating charts or results. It does not import or call the legacy generator. The CLI supports `status` and read-only `audit` commands.
+Paired baseline and monitor volumes are validated before attributes are calculated. The canonical array order is `(inline, crossline, sample)`. Missing trace locations remain masked and are excluded from paired calculations. Data ingestion preserves source metadata for SEG-Y and available well tables/logs.
 
-No competition inputs currently exist in the workspace. Previously copied incomplete volumes were deleted. Historical actual-data-derived audit artifacts are excluded from publication and are not active inputs or validation. Do not reconstruct or process from them.
+The attribute layer calculates signed and absolute differences, RMS and normalized RMS within explicit windows. Statistical screening and eligible classical detectors produce scores and masks with provenance. Connected components summarize spatially adjacent detections. Scores are not probabilities unless a separate calibration has been validated.
 
-## Scientific modules
+## Findings and interpretation
 
-Scalable chunked processing, memmapped analytical outputs, provenance, spatial transforms, and multi-attribute screening are documented in [scalable analytics](scalable_analytics.md). The common detector/evidence contract and five model statuses are in [five-model detection](five_model_detection.md).
+Completed analysis products are stored in a versioned registry that records data/configuration identity, analyzed tiles, coverage, model provenance and component membership. The dashboard loads completed products; opening pages or navigating findings does not trigger full-volume fitting. A shared local evidence ledger is used by the report and visualizations so the same finding retains its identity and coordinates.
 
-Optional PyTorch 3D model builders and HPC-only training/inference orchestration are under `ai/torch_models.py` and `hpc/`. They import framework packages lazily and do not initialize or allocate a GPU in the Windows source-development environment.
+Deterministic summaries distinguish measured observations, calculated attributes, detections, geological hypotheses and recommended investigations. An optional language-model client can interpret validated evidence packets when explicitly invoked and configured. It does not calculate seismic attributes or authorize a reservoir conclusion.
 
-- `preprocessing/`: quality statistics and optional, explicit normalization.
-- `registration/`: bounded integer and fractional trace-lag diagnostics, exact trace-key reindexing, and explicitly parameterized affine grid resampling. Transform estimation and spatially regularized temporal warping remain incomplete.
-- `data/validation.py`: streaming SEG-Y integrity, source hash/size/trace-count gates, explicit trace-key reindexing, coordinate checks, geometry compatibility, and machine-readable validation findings.
-- `preprocessing/repeatability.py`: chunked global and local-tile waveform correlation/NRMS diagnostics over joint finite masks; no universal repeatability threshold is claimed.
-- `attributes/`: signed/absolute/normalized difference, local RMS and windowed NRMS.
-- `detection/`: statistical scoring and connected components. Scores are strengths, not calibrated probabilities.
-- `visualization/`: display-only downsampling, volume and endpoint-animation figures.
-- `llm/`: optional evidence-summary client, isolated from numerical processing.
+## Application views
 
-## Dataset boundary
+The Streamlit application presents survey quality, linked 3D/grid context, baseline/monitor comparison, change findings, an automatic finding-directed storyboard, well evidence and a technical interpretation report. Display aggregation is separate from full-resolution analysis.
 
-There is no current actual-data audit or actual-data processing. Current environment dependencies and module maturity are recorded in [Track B/C roadmap](track_b_c_roadmap.md). The formal input/output contract is in [data_contract.md](data_contract.md).
+## Scientific boundaries
 
-Prior synthetic generator/configuration/scenario/evaluation modules and their demo app/tests are retained for provenance but are not imported by the active app or package top-level API. See [legacy modules](synthetic_data.md).
-
-## Product architecture decision
-
-The strategic target is a hybrid DUG plus custom Python product. DUG is the preferred expert-led interpretation/QC companion if the competition installation and licences provide the relevant functions. Python remains the authoritative reproducible processing, detector, evaluation, evidence-ranking and integrated visualization layer. The current environment has not verified DUG installation, licence modules or session exports; see [DUG capability and integration audit](dug_insight_workflow.md) and [visualization architecture decision](visualization_architecture_decision.md).
-
-The revised phases and implementation gates are in [scientific development roadmap](scientific_roadmap.md). This direction preserves the original ambition; it does not claim that advanced AI, actual-data interpretation, well integration or custom 3D performance has already been delivered.
+Trace-key correspondence is not physical 4D registration. Grid indices are not geographic coordinates, time or depth without verified metadata. Well-to-seismic relationships require validated coordinate reference systems and depth/time ties. When prerequisites are absent, the platform reports the association as unavailable.

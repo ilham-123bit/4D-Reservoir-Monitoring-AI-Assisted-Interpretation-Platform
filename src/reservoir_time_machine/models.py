@@ -105,6 +105,7 @@ class ChangeAttributes:
     rms_baseline: np.ndarray
     rms_monitor: np.ndarray
     nrms: np.ndarray
+    paired_sample_count: np.ndarray | None = None
 
 
 @dataclass(frozen=True)

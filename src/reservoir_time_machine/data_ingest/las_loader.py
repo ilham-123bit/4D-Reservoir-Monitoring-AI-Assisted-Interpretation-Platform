@@ -19,9 +19,10 @@ def inspect_las(path: str | Path) -> dict[str, Any]:
     null_marker = las.well.NULL.value
     for curve in las.curves:
         values = np.asarray(las[curve.mnemonic], dtype=float)
-        null_count = int((~np.isfinite(values)).sum())
+        nulls = ~np.isfinite(values)
         if null_marker is not None:
-            null_count += int(np.count_nonzero(values == float(null_marker)))
+            nulls |= values == float(null_marker)
+        null_count = int(nulls.sum())
         curves.append({"mnemonic": curve.mnemonic, "unit": curve.unit,
                        "description": curve.descr, "sample_count": int(values.size), "null_count": null_count})
     return {"source_file": path.name, "well_id": str(las.well.WELL.value or ""),
