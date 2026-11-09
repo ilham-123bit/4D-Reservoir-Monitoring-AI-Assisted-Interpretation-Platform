@@ -740,3 +740,5 @@ else:
                   'missing_evidence':well_context['missing_association_evidence']})
         st.caption('Measured and interpreted curves are source context only. No candidate-to-well relationship is established.')
         st.write(well_context)
+
+# Autosync acceptance canary: source-only, non-functional deployment check.
