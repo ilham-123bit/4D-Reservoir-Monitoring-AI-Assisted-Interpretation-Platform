@@ -32,6 +32,7 @@ from reservoir_time_machine.analysis.recovery_intelligence import (
     default_investigation_id,
     investigation_records,
     select_investigation,
+    reservoir_evolution_readiness,
 )
 from reservoir_time_machine.analysis.technical_report import report_markdown
 from reservoir_time_machine.visualization.presentation import select_entry,render_presentation
@@ -42,7 +43,7 @@ from reservoir_time_machine.visualization.presentation_cache import (
     presentation_identity,
     presentation_cache_token,
 )
-from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary
+from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary, build_well_evidence_matrix
 from reservoir_time_machine.visualization.animation import animation_figure
 from reservoir_time_machine.visualization.dashboard_state import empty_dataset_state
 from reservoir_time_machine.visualization.seismic_3d import volume_figure
@@ -1337,9 +1338,31 @@ elif page == "Survey transition":
 
 elif page == "Well inventory":
     page_header("Wells & reservoir evidence", "Source well data inform context; seismic ties stay disabled until references are verified.")
-    st.markdown('### Evidence by source well')
     groups=well_context.get('by_well',{})
     well_keys=sorted(groups)
+    evidence_matrix = well_context.get("well_evidence_matrix") or build_well_evidence_matrix(well_context)
+    st.markdown("### Eight-well evidence matrix")
+    matrix_rows=[]
+    for item in evidence_matrix:
+        families=item.get("curve_families",{})
+        table_counts={category:sum(int(table.get("records",0)) for table in item.get(category,[]))
+                      for category in ("markers","checkshots","deviations")}
+        matrix_rows.append({
+            "Well":item["well_id"], "Workbook X/Y":str(item.get("workbook_xy") or "not listed"),
+            "Coordinate reference":"Unspecified; no SEG-Y association",
+            "LAS sources":len(item.get("las_sources",[])),
+            "GR":"; ".join(families.get("gamma_ray",[])) or "—",
+            "Resistivity":"; ".join(families.get("resistivity",[])) or "—",
+            "Sonic":"; ".join(families.get("sonic",[])) or "—",
+            "Density / neutron":"; ".join(families.get("density",[])+families.get("neutron",[])) or "—",
+            "Interpreted PHI / perm / saturation":"; ".join(families.get("porosity_interpreted",[])+families.get("permeability_interpreted",[])+families.get("saturation_or_volume_interpreted",[])) or "—",
+            "Markers / checkshot / deviation records":f"{table_counts['markers']} / {table_counts['checkshots']} / {table_counts['deviations']}",
+            "Well-to-seismic tie":"Unverified"})
+    if matrix_rows:
+        st.dataframe(matrix_rows,use_container_width=True,hide_index=True)
+    st.caption("Curve mnemonics are reported as supplied. PHIE, PERM, SWE, VOIL and VGAS are interpreted/derived source curves, not independently verified fluid or reservoir truth. Workbook X/Y values are shown as source numbers only; units, CRS and datum are unspecified.")
+    st.info("Well-local marker/checkshot interpolation is available where both files declare compatible TVDSS (m) and TWT (ms). It is not a well-to-seismic tie. SEG-Y headers show 2 ms sampling and zero recording delay, but the textual headers do not explicitly declare a TWT sample domain; trace XY coordinates are zero and coordinate units are unset.")
+    st.markdown('### Evidence by source well')
     if well_keys:
         selected_well=st.selectbox('Select source well',well_keys,key='well_evidence_selected')
         group=groups[selected_well]
@@ -1377,8 +1400,9 @@ elif page == "Well inventory":
                         yaxis={'autorange':'reversed'},font={'color':'white'},height=540,margin={'l':60,'r':20,'t':55,'b':50})
                     st.plotly_chart(figure,use_container_width=True,theme=None)
                     st.caption(f"{int(finite.sum()):,}/{len(x):,} finite samples · {curve['evidence_kind']} · raw measurement status: {curve['raw_measurement_status']}")
-                st.dataframe([{key:curve[key] for key in ('mnemonic','unit','description','sample_count','null_count','evidence_kind')}
-                              for curve in las_data['curves']],use_container_width=True)
+                st.dataframe([{key:curve.get(key) for key in ('mnemonic','unit','description','sample_count','null_count','finite_count','finite_min','finite_median','finite_max','evidence_kind','raw_measurement_status','value_quality_flags')}
+                              for curve in log_summary['curves']],use_container_width=True)
+                st.caption("Finite ranges are source-file summaries, not validated reservoir distributions. Values flagged as outside declared fraction bounds or extreme finite interpreted values need source-encoding review before petrophysical use.")
             except (RuntimeError,OSError,ValueError,KeyError) as exc:
                 st.warning(f"LAS curve view unavailable: {type(exc).__name__}")
 
@@ -1431,6 +1455,23 @@ elif page == "Well inventory":
             st.info('N/A · no marker, checkshot or deviation file grouped under this source well.')
     else:
         st.info('N/A · no source well evidence is available.')
+
+    selected_matrix = next((item for item in evidence_matrix if item.get("well_id")==selected_well),None) if well_keys else None
+    if selected_matrix:
+        deviation_relationship=selected_matrix.get("marker_deviation_relationship",{})
+        st.markdown("#### Well-local marker/deviation relationship")
+        if deviation_relationship.get("markers"):
+            st.dataframe(deviation_relationship["markers"],use_container_width=True,hide_index=True)
+            st.caption(deviation_relationship.get("limitation","This remains a source-well relationship, not a seismic tie."))
+        else:
+            st.info(deviation_relationship.get("reason","No compatible marker/deviation pair is available."))
+        relationship=selected_matrix.get("marker_checkshot_relationship",{})
+        st.markdown("#### Well-local marker/checkshot relationship")
+        if relationship.get("markers"):
+            st.dataframe(relationship["markers"],use_container_width=True,hide_index=True)
+            st.caption(f"Linear interpolation only within source checkshot coverage {relationship['checkshot_tvdss_range_m']} m TVDSS / {relationship['checkshot_twt_range_ms']} ms TWT. {relationship.get('limitation','')}")
+        else:
+            st.info(relationship.get("reason","No compatible well-local marker/checkshot pair is available."))
 
     with st.expander('Association readiness'):
         readiness=well_context.get('association_assessment',{})
@@ -1551,6 +1592,7 @@ else:
         interpretation = assessment["candidate_interpretation"]
         stage2_review = assessment["stage2_top_ten_review"]
         consensus = assessment["consensus"]
+        evolution = reservoir_evolution_readiness(well_context, assessment)
         section("What happened? · full-field screening, not a reservoir diagnosis")
         metric_cols = st.columns(4)
         metric_cols[0].metric("Stage 2 coverage", "2,040 / 2,040 chunks")
@@ -1671,6 +1713,21 @@ else:
 
         st.markdown("### Where is the next recovery opportunity?")
         st.info("Recovery Chance of Success: Not yet quantifiable. The source package has zero verified reservoir-interval associations and zero recovery opportunities supported by reservoir and production evidence. Current priorities are surveillance and data-validation actions, not drilling locations.")
+        st.markdown("#### Reservoir evolution hypotheses: evidence gates")
+        status_rows=[
+            {"Question": "Production-response compartments", "Status": evolution["statuses"]["production_response"], "Current basis": "Full-field seismic screening exists; reservoir interval and verified repeatability tie do not."},
+            {"Question": "Relatively limited-response / possible low-sweep compartments", "Status": evolution["statuses"]["limited_response_or_poor_sweep"], "Current basis": "No verified reservoir mask, detectability assessment, or production/injection context."},
+            {"Question": "Depletion / fluid / pressure mechanism", "Status": evolution["statuses"]["fluid_or_pressure_mechanism"], "Current basis": "No mechanism-specific pressure, production, fluid-contact or validated rock-physics evidence."},
+            {"Question": "Qualified recovery opportunities", "Status": str(evolution["statuses"]["development_opportunity_count"]), "Current basis": "None qualify in the checksummed Stage 3 assessment."},
+        ]
+        st.dataframe(status_rows,use_container_width=True,hide_index=True)
+        st.caption(evolution["interpretation_rule"])
+        st.markdown("#### Highest-value next evidence actions")
+        st.dataframe(evolution["next_data_actions"],use_container_width=True,hide_index=True)
+        st.markdown("#### Discipline-specific next actions")
+        st.dataframe(evolution["discipline_actions"],use_container_width=True,hide_index=True)
+        with st.expander("Why reservoir mechanisms remain unassigned"):
+            st.write(evolution["limitations"])
         with st.expander("Method capability and validation status"):
             st.dataframe([
                 {"Evidence component": "Mahalanobis / PCA / Isolation Forest / GMM", "Execution": "Completed full-field", "Validation boundary": "Computational outputs completed; historical top ten has no threshold flags from these four"},

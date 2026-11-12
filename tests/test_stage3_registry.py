@@ -162,6 +162,11 @@ class Stage3RegistryTests(unittest.TestCase):
         self.assertEqual(app.session_state["selected_finding_id"], next_id)
         self.assertEqual(app.session_state["stage3_finding_selection"], next_id)
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
+        app.sidebar.radio[0].set_value("Well inventory").run()
+        self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
+        self.assertTrue(any("Eight-well evidence matrix" in value for value in
+                            [element.value for element in app.markdown]))
+        self.assertEqual(len(app.slider), 0)
         app.sidebar.radio[0].set_value("4D comparison").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
