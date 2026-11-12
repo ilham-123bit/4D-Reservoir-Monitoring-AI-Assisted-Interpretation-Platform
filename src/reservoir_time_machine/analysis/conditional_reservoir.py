@@ -150,7 +150,9 @@ def evaluate_conditional_window(baseline, monitor, missing_trace_mask, candidate
                     if v is not None and v["nrms_percent"] is not None]
     control_median = float(np.median(control_nrms)) if control_nrms else None
     current = raw["nrms_percent"]
-    if current is None:
+    if raw["support_fraction"] < 0.8:
+        response = "insufficient_paired_support_for_comparison"
+    elif current is None:
         response = "unsupported_local_response"
     elif control_median is None:
         response = "no_valid_off_window_comparison"
