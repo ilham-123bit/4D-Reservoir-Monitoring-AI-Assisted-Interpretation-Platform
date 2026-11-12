@@ -1582,7 +1582,7 @@ elif page == "4D comparison":
         st.markdown("**Signed difference** = Monitor − Baseline at the selected grid cell and sample. It retains sign; it does not identify a cause.")
         st.markdown("**Windowed NRMS** = 200 × RMS(Monitor − Baseline) / (RMS(Baseline) + RMS(Monitor)) over a centered 9-sample window, clipped at volume ends and calculated from finite paired samples. Higher values indicate greater local dissimilarity; NRMS is not a probability or registration correction.")
         st.markdown("**Limit:** equal grid keys establish correspondence only. Without physical 4D registration, differences remain preliminary screening evidence.")
-        st.caption(registration_status)
+        st.caption("Registration and time-depth limitations: Confidence & QC.")
         st.markdown("#### Well evidence")
         if availability["well_inventory_available"]:
             st.write("Well-list spreadsheet available. A verified well-to-seismic tie for this selected point is unavailable; inspect source inventory in Well inventory.")
