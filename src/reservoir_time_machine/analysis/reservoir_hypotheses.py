@@ -144,6 +144,31 @@ def screen_response_regions(
     return result
 
 
+def _detector_context(finding):
+    """Use source component-level detector counts, not invented probabilities."""
+    raw = finding.get("detectors", finding.get("detector_flagged_voxels", {}))
+    flagged = {}
+    if isinstance(raw, dict):
+        for method, record in raw.items():
+            value = record.get("flagged_voxels", 0) if isinstance(record, dict) else record
+            if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+                flagged[str(method)] = max(0, int(value))
+    positive = [name for name, n in flagged.items() if n > 0]
+    return {
+        "component_detector_flag_counts": flagged,
+        "flagging_models": positive,
+        "n_models_with_flags": len(positive),
+        "mean_detector_vote_fraction": (
+            float(finding["mean_detector_vote_fraction"])
+            if finding.get("mean_detector_vote_fraction") is not None else None
+        ),
+        "interpretation": (
+            "Model flags identify statistical similarity, not validated fluid or reservoir classes."
+            if positive else "No independent multivariate support is established at this component."
+        ),
+    }
+
+
 def candidate_briefing(finding, result, *, source="full_field"):
     """Turn a candidate's measured local seismic map into a short decision record.
 
@@ -206,5 +231,6 @@ def candidate_briefing(finding, result, *, source="full_field"):
         "sweep_efficiency": "not estimable without saturation/dynamic reservoir data",
         "bypassed_hydrocarbon": "hypothesis_only_no_positive_reservoir_fluid_tie",
         "drilling_location": None,
-        "evidence_ids": [fid+":seismic", fid+":spatial_region"],
+        "ml_evidence": _detector_context(finding),
+        "evidence_ids": [fid+":seismic", fid+":spatial_region", fid+":detectors"],
     }
