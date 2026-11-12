@@ -49,12 +49,12 @@ class DashboardRenderingTests(unittest.TestCase):
             app = AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'), default_timeout=30).run()
             self.assertEqual(list(app.exception), [])
             overview_text = '\n'.join(v.value for v in app.markdown)
-            self.assertIn('Angsi Field · 4D Reservoir Intelligence', overview_text)
-            self.assertIn('Angsi Field · 4D Reservoir Intelligence', overview_text)
+            self.assertIn('Angsi · Reservoir Intelligence', overview_text)
+            self.assertIn('Angsi · Reservoir Intelligence', overview_text)
             self.assertTrue(any('No completed, validated findings registry' in x.value for x in app.info))
             self.assertEqual(len(app.slider), 0)
             warning = 'Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.'
-            self.assertIn(warning, [x.value for x in app.warning])
+            self.assertNotIn(warning, [x.value for x in app.warning])
             route_group = {'3D explorer':'02 — 3D Reservoir','3D discovery map':'02 — 3D Reservoir',
                          '4D comparison':'03 — 4D Reservoir Evolution','Survey transition':'03 — 4D Reservoir Evolution',
                          'Recovery intelligence':'05 — Development Studio','Change detection':'01 — Confidence & QC',
@@ -65,15 +65,17 @@ class DashboardRenderingTests(unittest.TestCase):
                          'Overview and QC']:
                 charts.clear()
                 app.sidebar.radio[0].set_value(route_group[page]).run()
-                if page not in ('Overview and QC','Well inventory','Recovery intelligence'):
+                if page not in ('Well inventory','Recovery intelligence'):
                     next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value(page).run()
                 self.assertEqual([e.message for e in app.exception], [], page)
                 self.assertEqual(len(app.slider), 0, f'{page} must not expose manual coordinate sliders')
                 if page == '4D comparison':
                     self.assertEqual(len(app.sidebar.slider), 0)
                     self.assertEqual([v.label for v in app.sidebar.selectbox], ['Section'])
-                    self.assertTrue(any('will not open an arbitrary survey midpoint' in x.value
+                    self.assertTrue(any('Choose a source-linked area' in x.value
                                         for x in app.info))
+                if page == 'Overview and QC':
+                    self.assertIn(warning, [x.value for x in app.warning])
                 if page == 'Change detection':
                     next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value('Expert diagnostics').run()
                     next(v for v in app.checkbox if v.label=='Run expert full-sample screening').check().run()

@@ -701,9 +701,6 @@ if not paired_grid_available or not capabilities["trace_key_preliminary_screenin
     st.error("Paired Baseline/Monitor screening requirements are unresolved.")
     st.stop()
 
-if page != "4D comparison" and not physical_4d_registration_verified:
-    registration_warning()
-
 if full_field_registry and field_entry:
     finding=field_finding;record=field_entry['interpretation'];loc=finding['segy_location'];metrics=finding['measurements']
     st.markdown(f"## Full-volume finding {field_entry['rank']} · {finding['id']}")
@@ -756,8 +753,8 @@ if page not in ("Overview and QC", "Reservoir Command Center", "Gemma AI Copilot
         st.caption('Coverage: N/A · no completed findings registry is available.')
 
 if page == "Reservoir Command Center":
-    page_header("Angsi Field · 4D Reservoir Intelligence",
-                "Baseline 1995 → Monitor 2006 · evidence-led surveillance and recovery investigation")
+    page_header("Angsi · Reservoir Intelligence",
+                "1995 → 2006 | What changed · Why · Where to investigate")
 
     # Scientific local contrasts are calculated from bounded actual source
     # samples. The score map is NOT a reservoir mask or sweep classifier.
@@ -770,11 +767,10 @@ if page == "Reservoir Command Center":
                 _spatial = screen_local_compartments(
                     baseline, monitor, paired_missing, _source_position)
                 _decision = development_hypothesis(_spatial)
-                st.markdown("### Reservoir evolution · changed versus relatively quiet regions")
+                st.markdown("### Changed vs quieter areas")
                 st.markdown("**" + _decision["headline"] + "**")
                 st.caption(
-                    "Actual 1995 and 2006 paired seismic at the selected finding. "
-                    "A spatial seismic contrast is not a fluid or swept-reservoir classification.")
+                    "Measured 1995–2006 seismic response near the selected area; fluid cause is unconfirmed.")
                 if _spatial["status"] == "measured_local_spatial_contrast":
                     _m1, _m2, _m3 = st.columns(3)
                     _m1.metric("Selected region · median NRMS",
@@ -814,9 +810,9 @@ if page == "Reservoir Command Center":
                     st.plotly_chart(_fig, width="stretch", theme=None,
                                     key="command_real_spatial_evolution")
                     st.markdown("**What we measured:** " + _spatial["interpretation"])
-                    st.markdown("**Production-related hypothesis:** " + _decision["production_response"])
-                    st.markdown("**Possible limited sweep:** " + _decision["poor_sweep"])
-                    st.markdown("**Recovery options worth evaluating:**")
+                    st.markdown("**Possible cause:** " + _decision["production_response"])
+                    st.markdown("**Nearby quieter area:** " + _decision["poor_sweep"])
+                    st.markdown("**Next options to test:**")
                     for _option in _decision["development_options"]:
                         st.markdown("- " + _option)
                     with st.expander("Mechanisms, competing explanations and six technical decisions"):
@@ -842,8 +838,8 @@ if page == "Reservoir Command Center":
     # Prefer a checksummed, cache-identity-matched result from the bounded HPC
     # experiment. If no saved artifact is configured, the same bounded windows
     # are recomputed from the existing paired cache; no full-field work runs.
-    st.markdown("### I-100 reservoir-window hypothesis · actual 4D measurements")
-    st.caption("Tested well marker and coordinate assumptions, not a mapped or verified reservoir horizon.")
+    st.markdown("### I-100 · well-window measurements")
+    st.caption("Three timing assumptions at Wells 5–7; not established reservoir horizons.")
     try:
         scenario_results = []
         evidence_path = os.environ.get("RTM_CONDITIONAL_I100_EVIDENCE")
@@ -885,8 +881,8 @@ if page == "Reservoir Command Center":
             st.session_state["rtm_copilot_records"] = []
             st.info("No compatible source-local I-100 windows fall within the proposed Baseline header frame. No reservoir interval was invented.")
         else:
-            st.warning("Conditional test only: Baseline header coordinates, workbook X/Y frame, sample-zero TWT, well-to-seismic tie and physical 4D registration are not independently verified.")
-            st.caption(f"Evidence source: {evidence_source}. The three sample-origin cases are alternative assumptions, not additional surveys; NRMS is not ranked as recovery potential. A bounded same-sample spatial contrast is also computed around each conditional marker window.")
+            st.caption("Well positions and seismic time origins are assumed. Details: Confidence & QC.")
+            st.caption(f"Source: {evidence_source}. Three origins test timing sensitivity, not three surveys.")
             def _display_number(value, places=1):
                 return round(float(value), places) if value is not None and np.isfinite(value) else "—"
             _scenario_spatial = {}
@@ -928,13 +924,11 @@ if page == "Reservoir Command Center":
                     "selected_region_less_responsive_than_neighborhood",
                 } for item in _scenario_spatial.values())
             st.markdown(
-                f"**Compartment contrast result:** {_spatially_distinct} of "
-                f"{len(_scenario_spatial)} conditional well-origin windows show a "
-                "distinct core-versus-ring NRMS contrast under the bounded screen. "
-                "A locally quiet window is not evidence of unswept hydrocarbons; "
-                "a spatially distinct response would still require a tied interval and repeatability review."
+                f"**Spatial contrast: {_spatially_distinct}/{len(_scenario_spatial)} well-window tests.** "
+                + ("No distinct local response compartment emerged." if not _spatially_distinct
+                   else "These differences still need reservoir and repeatability checks.")
             )
-            st.markdown("#### Ranked next investigations · evidence actions, not recovery targets")
+            st.markdown("#### Next checks that could change the decision")
             for action in conditional_follow_up_actions(scenario_results):
                 st.markdown(f"**{action['rank']}. {action['action']}**")
                 st.caption(f"Evidence: {action['evidence']} · Recovery relevance: {action['recovery_relevance']}")
@@ -1021,7 +1015,7 @@ if page == "Reservoir Command Center":
                 )
             st.caption("The signed value uses source amplitude units. Lag search is diagnostic only; it does not register or alter either survey. Off-window windows are local comparisons, not verified unchanged reservoir controls.")
             if focused_result["response_vs_off_window_controls"] == "larger_change_than_local_off_window_comparisons":
-                st.warning("This scenario exceeds the configured local-control comparison; it is a follow-up for repeatability and tie QC, not a recovery target.")
+                st.info("Stronger than nearby time windows, but not a confirmed spatial compartment.")
             ci, cx, cs = focused_case["array_location"]
             conditional_display = {
                 "array_location": [ci, cx, cs],
@@ -1042,26 +1036,26 @@ if page == "Reservoir Command Center":
         consensus = assessment.get("consensus", {})
         candidates = stage3_investigations
         selected = selected_investigation
-        st.markdown("### WHAT IS HAPPENING IN THE RESERVOIR?")
-        st.write("The completed paired survey arrays contain spatially varying seismic differences. These are observations on matched Baseline-grid trace keys; cause and physical 4D repeatability remain unverified.")
-        st.markdown("### WHICH CHANGES MATTER MOST?")
-        st.write("The archived Stage 2 top ten are MAD-only screening candidates. Three-detector consensus is limited and concentrated near the crossline survey boundary; it is not independent geological confirmation.")
-        st.markdown("### WHERE SHOULD RECOVERY TEAMS INVESTIGATE NEXT?")
-        st.write("No recovery opportunity is currently verified. The default focus is the highest-ranked QC follow-up action, which may resolve uncertainty before reservoir or production decisions.")
+        st.markdown("### 01 · What changed, and where?")
+        st.write("The 1995 and 2006 surveys differ across the paired seismic grid. Their reservoir cause is still unresolved.")
+        st.markdown("### 02 · What could explain the change?")
+        st.write("The historical top ten are MAD-only; the three-model overlap lies near the survey edge. Reservoir or processing effects both remain possible.")
+        st.markdown("### 03 · Where should we investigate next?")
+        st.write("No drill-ready area is supported yet. Test the strongest source-linked seismic regions against reservoir and well evidence before choosing an intervention.")
         metric = st.columns(4)
         metric[0].metric("Valid full-field positions", "1.604B", help="Completed Stage 1/2B report; finite paired positions.")
         metric[1].metric("Classical ML consensus voxels", f"{int(consensus.get('voxel_count', 0)):,}", help="Mahalanobis + PCA + GMM flags; Isolation Forest flags absent in this set.")
         metric[2].metric("Verified reservoir ties", "0", help="No finding has a verified well/horizon/sample association.")
         metric[3].metric("Recovery opportunities", f"{len(stage3_registry['recovery_opportunities'])}", help="Only independently supported opportunities qualify.")
-        st.caption("Registration status: preliminary screening only · details in Confidence & QC.")
+        st.caption("Scientific readiness and source limits: Confidence & QC.")
 
         if selected:
             finding = selected["finding"]
             if selected["kind"] == "qc_follow_up":
-                st.markdown(f"## Priority QC investigation {selected['queue_rank']} · {selected['id']}")
-                st.caption("This ranks a validation action, not a hydrocarbon location or recovery probability.")
+                st.markdown(f"## Focus area {selected['queue_rank']} · {selected['id']}")
+                st.caption("Priority is for investigation, not drilling.")
                 st.markdown("**What happened?** " + str(selected["observation"]))
-                st.markdown("**Why it matters:** the stored arrays differ numerically, but repeatability/registration and processing explanations must be resolved before geological attribution.")
+                st.markdown("**Why it matters:** seismic changed here; reservoir and processing causes are not yet separated.")
                 st.markdown(f"**Seismic observation confidence:** {selected['observation_confidence']}")
                 st.markdown(f"**Geological interpretation confidence:** {selected['geological_confidence']}")
                 if selected["alternatives"]:
@@ -1079,7 +1073,7 @@ if page == "Reservoir Command Center":
             action_ids = {item["finding"]["id"] for item in stage3_registry["qc_follow_up_actions"]}
             selectable = [item for item in candidates if item["id"] in action_ids]
             if selectable:
-                st.markdown("#### Other ranked QC actions")
+                st.markdown("#### Other follow-up tests")
                 buttons = st.columns(min(4, len(selectable)))
                 for index, item in enumerate(selectable[:4]):
                     buttons[index].button(
@@ -1127,7 +1121,7 @@ if page == "Reservoir Command Center":
                 crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
                 run_id=f"command-{selected['id']}")
         else:
-            st.info("No validated investigation record is present. The homepage will not choose a midpoint or invent a target.")
+            st.info("No source-linked area is selected. See Confidence & QC for available findings.")
         with st.expander("Eight-method and evidence status"):
             st.dataframe([
                 {"Method": "Mahalanobis distance", "Angsi status": "Full-field score maps completed; historical top ten has zero flags"},
@@ -1141,7 +1135,7 @@ if page == "Reservoir Command Center":
                 {"Method": "Edge and coverage QC", "Angsi status": "Completed Stage 2/3 QC; consensus remains edge-sensitive"},
             ], width="stretch", hide_index=True)
     elif full_field_registry and field_finding:
-        st.info("Validated full-field findings registry loaded. The Stage 3 QC action package is not configured; this record is shown as seismic screening, not recovery intelligence.")
+        st.info("Full-field seismic finding loaded. Reservoir mechanism and recovery value are still being assessed.")
         bounded_ml_evidence()
     elif registry and guided_result is not None:
         st.info("Only bounded preliminary results are available. They are not global priorities.")
@@ -1438,13 +1432,13 @@ elif page == "3D discovery map":
             crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
             run_id=f"3d-map-{chosen['id']}")
     else:
-        st.info("No validated finding locations are available for a 3D map. No arbitrary voxel cloud is generated.")
+        st.info("No mapped finding is available. Check the findings registry in Confidence & QC.")
 elif page == "3D explorer":
-    page_header("3D seismic explorer", "Linked inline, crossline, and sample sections intersect at the shared selected location.")
+    page_header("3D seismic explorer", "1995 and 2006 at the selected location.")
     if selected_investigation is None:
-        st.info("No validated finding is selected. The application will not open arbitrary midpoint seismic slices. Load a completed finding registry or use Expert diagnostics for explicitly manual inspection.")
+        st.info("Select a source-linked finding to open its 3D seismic views.")
         st.stop()
-    st.caption("Drag to rotate; choose Pan in the Plotly mode bar to pan; use scroll or mode bar controls to zoom and reset the camera. Planes are display-strided; missing trace bins are conservatively shown as gaps; source arrays and analytical data remain full resolution.")
+    st.caption("Drag to rotate; scroll to zoom. Missing traces appear as gaps.")
     baseline_display, monitor_display = display_volume(baseline, 36), display_volume(monitor, 36)
     limit = max(float(np.nanpercentile(np.abs(baseline_display), 99)), float(np.nanpercentile(np.abs(monitor_display), 99)))
     left, right = st.columns(2)
@@ -1470,25 +1464,18 @@ elif page == "3D explorer":
     coordinate_metrics[1].metric("Crossline header ID", f"{crossline_id:,}" if crossline_id is not None else "N/A",
                                  help=f"Array index: {crossline:,}")
     coordinate_metrics[2].metric("Sample index", f"{sample:,}")
-    st.caption("Header IDs are shown when supplied; sample remains an array index because sample origin and physical domain are unverified.")
+    st.caption("Sample index is not an independently tied reservoir time. See Confidence & QC.")
 elif page == "4D comparison":
     app_header.empty()
-    st.markdown("### 4D comparison · Reservoir Time Machine")
-    registration_status = (
-        "Physical 4D registration is not yet verified."
-        if not physical_4d_registration_verified
-        else "Physical 4D registration meets the declared capability requirements."
-    )
+    st.markdown("### 4D · 1995 versus 2006")
     if not physical_4d_registration_verified:
-        registration_warning()
-    else:
-        st.info(registration_status)
-    st.caption("Differences do not establish a geological cause or remaining hydrocarbons.")
+        st.caption("Survey registration is not independently verified · see Confidence & QC.")
+    st.caption("Measured seismic difference; fluid interpretation is assessed separately.")
     if selected_investigation is None:
-        st.info("No validated finding is selected. The application will not open an arbitrary survey midpoint. Load a completed finding registry or use Expert diagnostics for manual inspection.")
+        st.info("Choose a source-linked area to compare the two surveys.")
         st.stop()
     view = st.radio("Synchronized section", ["Sample plane", "Inline section", "Crossline section"], horizontal=True)
-    st.caption("The selected investigation supplies the location. Array indices remain available in the evidence panel; sample origin and physical time/depth are unverified.")
+    st.caption("Showing the selected area; timing details are in Confidence & QC.")
     point_attrs=cached_point_attributes(dataset_cache_identity,inline,crossline,sample,baseline,monitor)
     i0,i1=max(0,inline-48),min(baseline.shape[0],inline+49)
     x0,x1=max(0,crossline-48),min(baseline.shape[1],crossline+49)
@@ -1595,7 +1582,7 @@ elif page == "4D comparison":
         st.markdown("**Signed difference** = Monitor − Baseline at the selected grid cell and sample. It retains sign; it does not identify a cause.")
         st.markdown("**Windowed NRMS** = 200 × RMS(Monitor − Baseline) / (RMS(Baseline) + RMS(Monitor)) over a centered 9-sample window, clipped at volume ends and calculated from finite paired samples. Higher values indicate greater local dissimilarity; NRMS is not a probability or registration correction.")
         st.markdown("**Limit:** equal grid keys establish correspondence only. Without physical 4D registration, differences remain preliminary screening evidence.")
-        st.caption(registration_status)
+        st.caption("Registration and time-depth limitations: Confidence & QC.")
         st.markdown("#### Well evidence")
         if availability["well_inventory_available"]:
             st.write("Well-list spreadsheet available. A verified well-to-seismic tie for this selected point is unavailable; inspect source inventory in Well inventory.")
@@ -1790,7 +1777,7 @@ elif page == "Survey transition":
         st.info("No eligible connected ML finding is available in the automatically inspected tile; a focused interpretation animation is not fabricated. Review the report's screening coverage, support and missing well/registration evidence.")
 
 elif page == "Well inventory":
-    page_header("Wells & reservoir evidence", "Source well data inform context; seismic ties stay disabled until references are verified.")
+    page_header("Geology & wells", "Logs, reservoir intervals and well–seismic evidence.")
     groups=well_context.get('by_well',{})
     well_keys=sorted(groups)
     evidence_matrix = well_context.get("well_evidence_matrix") or build_well_evidence_matrix(well_context)
@@ -2095,7 +2082,7 @@ elif page == "Evidence explanation":
         st.caption("Gemma can select only constrained statements and exact supplied values. It does not validate geology; service output remains subject to human review.")
 
 else:
-    page_header("Recovery intelligence", "Evidence-led surveillance actions · no unsupported recovery targets or success probabilities.")
+    page_header("Development Studio", "Where to investigate, what to test and why.")
     if stage3_registry is None:
         if stage3_registry_error:
             st.error(f"The Stage 3 assessment did not pass checksum/schema/coordinate validation ({stage3_registry_error}).")
@@ -2115,9 +2102,9 @@ else:
         metric_cols[1].metric("Candidate voxels", f"{candidate_voxels:,}")
         metric_cols[2].metric("Multi-model consensus voxels", f"{consensus['voxel_count']:,}")
         metric_cols[3].metric("Verified reservoir / recovery targets", "0 / 0")
-        st.caption("Recovery targets are not verified; review the evidence gates in Confidence & QC.")
+        st.caption("No drill-ready target. See Confidence & QC for evidence status.")
 
-        st.markdown("### Which changes matter? · first review the QC action queue")
+        st.markdown("### Which investigations come first?")
         selection_ids = [item["id"] for item in stage3_investigations]
         selected_id = st.selectbox(
             "Investigation record", selection_ids,
@@ -2201,7 +2188,7 @@ else:
         metric_cols[2].metric("Mean NRMS", f"{attrs['nrms_mean_percent']:.2f}%")
         metric_cols[3].metric("Min paired support", f"{attrs['min_paired_support']}/9")
         metric_cols[4].metric("Stage 3 capped index", f"{stage3_registry['stage3_indices'][selected_id]:.3f}")
-        st.markdown("#### Why this is not yet a recovery target")
+        st.markdown("#### What limits this candidate?")
         st.write(f"The historical Stage 2 list is **MAD-only** for all ten entries; four classical detector threshold flags are zero for each. The Stage 3 support correction caps support at 1.0 and preserves the Stage 2 archive. The corrected index is still a screening index, not a probability. The consensus set contains {consensus['voxel_count']:,} Mahalanobis/PCA/GMM voxels and is concentrated near the high-crossline boundary; it does not establish independent geological confirmation.")
         st.markdown("#### What to investigate next")
         st.write(selected.get("geophysics_next_action", "Review registration, repeatability and acquisition/processing metadata."))
@@ -2225,9 +2212,9 @@ else:
                 "Stage 3 index": stage3_registry["stage3_indices"][item["id"]]})
         st.dataframe(rows, width="stretch", hide_index=True)
 
-        st.markdown("### Where is the next recovery opportunity?")
-        st.info("Recovery Chance of Success: Not yet quantifiable. The source package has zero verified reservoir-interval associations and zero recovery opportunities supported by reservoir and production evidence. Current priorities are surveillance and data-validation actions, not drilling locations.")
-        st.markdown("#### Reservoir evolution hypotheses: evidence gates")
+        st.markdown("### Where could we investigate next?")
+        st.info("No drill-ready candidate or calibrated Chance of Success. Current priorities are source-linked investigations, not well locations.")
+        st.markdown("#### Which reservoir explanations are supported?")
         status_rows=[
             {"Question": "Production-response compartments", "Status": evolution["statuses"]["production_response"], "Current basis": "Full-field seismic screening exists; reservoir interval and verified repeatability tie do not."},
             {"Question": "Relatively limited-response / possible low-sweep compartments", "Status": evolution["statuses"]["limited_response_or_poor_sweep"], "Current basis": "No verified reservoir mask, detectability assessment, or production/injection context."},
@@ -2236,9 +2223,9 @@ else:
         ]
         st.dataframe(status_rows,width="stretch",hide_index=True)
         st.caption(evolution["interpretation_rule"])
-        st.markdown("#### Highest-value next evidence actions")
+        st.markdown("#### Next decisions")
         st.dataframe(evolution["next_data_actions"],width="stretch",hide_index=True)
-        st.markdown("#### Discipline-specific next actions")
+        st.markdown("#### Technical actions")
         st.dataframe(evolution["discipline_actions"],width="stretch",hide_index=True)
         with st.expander("Why reservoir mechanisms remain unassigned"):
             st.write(evolution["limitations"])

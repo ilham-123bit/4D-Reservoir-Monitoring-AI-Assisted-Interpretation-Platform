@@ -16,12 +16,10 @@ def render_gemma_copilot(context):
     """
     import streamlit as st
 
-    st.markdown("## Gemma · Reservoir Intelligence Copilot")
+    st.markdown("## Ask Gemma about this view")
     st.caption(
-        "Ask about paired seismic changes, ML evidence, well-marker hypotheses, "
-        "survey repeatability, uncertainty, and next reservoir investigations."
+        "Ask what the charts show, why an area matters, or what to test next."
     )
-    st.warning(REGISTRATION_WARNING)
     try:
         settings = LLMSettings.from_environment()
         configuration_error = None
@@ -33,21 +31,17 @@ def render_gemma_copilot(context):
         st.error(f"Gemma configuration invalid ({configuration_error}); local explanation remains available.")
     if not can_send:
         st.info(
-            "Evidence-first local assistant is available. Live Gemma is offline until "
-            "an approved service endpoint, data-sharing policy reference and "
-            "restricted-data permission are configured."
+            "Local evidence assistant active. Live Gemma is not configured."
         )
     else:
-        st.success("Gemma endpoint is configured; no evidence is transmitted without explicit consent.")
+        st.success("Live model available. Evidence sharing requires your consent.")
     consent = st.checkbox(
         "I authorize sending this bounded, restricted scientific evidence and my question "
         "to the configured Gemma service for this conversation.",
         value=False, disabled=not can_send, key="rtm_gemma_chat_consent",
     )
     st.caption(
-        "Only small validated evidence fields and your question may be sent. "
-        "Raw SEG-Y/LAS, seismic cubes, private file paths, and credentials are excluded. "
-        "Gemma's response is model-generated interpretation, not geological proof."
+        "Only approved evidence summaries can be shared with consent. Raw seismic, well files and credentials stay private."
     )
     identity = context_identity(context)
     if st.session_state.get("rtm_gemma_chat_context") != identity:
@@ -57,8 +51,7 @@ def render_gemma_copilot(context):
     left, right = st.columns([4, 1])
     with left:
         st.caption(
-            f"Active source context: {len(context['evidence'])} bounded evidence items "
-            "· no verified recovery targets"
+            f"Active context: {len(context['evidence'])} evidence items"
         )
     with right:
         if st.button("Clear chat", key="rtm_gemma_chat_clear"):
@@ -68,10 +61,8 @@ def render_gemma_copilot(context):
         if not history:
             with st.chat_message("assistant"):
                 st.markdown(
-                    "I can compare the measured 1995/2006 responses, explain "
-                    "why a conditional I-100 case is or is not convincing, and "
-                    "prioritize evidence-gathering. Try: **What changed at Well-6?** "
-                    "or **Where should we investigate next?**"
+                    "I can explain this view using the available evidence. Try: "
+                    "**What changed here?** or **What should we investigate next?**"
                 )
         for entry in history:
             with st.chat_message(entry["role"]):
@@ -83,7 +74,7 @@ def render_gemma_copilot(context):
                     )
                     st.caption(entry.get("uncertainty", REGISTRATION_WARNING))
     question = st.chat_input(
-        "Ask Gemma about the selected reservoir investigation…",
+        "Ask about this view or the next decision…",
         key="rtm_gemma_copilot_question",
     )
     if question:
