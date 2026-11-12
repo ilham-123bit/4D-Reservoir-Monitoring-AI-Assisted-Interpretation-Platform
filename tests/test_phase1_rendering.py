@@ -65,7 +65,7 @@ class DashboardRenderingTests(unittest.TestCase):
                          'Overview and QC']:
                 charts.clear()
                 app.sidebar.radio[0].set_value(route_group[page]).run()
-                if page not in ('Overview and QC','Well inventory','Recovery intelligence'):
+                if page not in ('Well inventory','Recovery intelligence'):
                     next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value(page).run()
                 self.assertEqual([e.message for e in app.exception], [], page)
                 self.assertEqual(len(app.slider), 0, f'{page} must not expose manual coordinate sliders')
