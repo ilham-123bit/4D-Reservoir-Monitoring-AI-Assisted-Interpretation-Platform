@@ -44,6 +44,10 @@ from reservoir_time_machine.visualization.presentation_cache import (
     presentation_cache_token,
 )
 from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary, build_well_evidence_matrix
+from reservoir_time_machine.data_ingest.spatial_geometry import (
+    conditionally_map_well_coordinates,
+    sample_segy_header_geometry,
+)
 from reservoir_time_machine.visualization.animation import animation_figure
 from reservoir_time_machine.visualization.dashboard_state import empty_dataset_state
 from reservoir_time_machine.visualization.seismic_3d import volume_figure
@@ -158,6 +162,11 @@ def cached_preliminary(dataset_id, sample_index, bounds, analysis_version, artif
 @st.cache_data(max_entries=2)
 def cached_well_evidence(root, source_identity):
     return well_evidence_summary(root)
+
+
+@st.cache_data(max_entries=2, show_spinner="Sampling SEG-Y headers for a conditional coordinate check…")
+def cached_header_geometry(path, identity):
+    return sample_segy_header_geometry(path, sample_count=1024)
 
 
 @st.cache_data(max_entries=4)
@@ -1362,6 +1371,29 @@ elif page == "Well inventory":
         st.dataframe(matrix_rows,use_container_width=True,hide_index=True)
     st.caption("Curve mnemonics are reported as supplied. PHIE, PERM, SWE, VOIL and VGAS are interpreted/derived source curves, not independently verified fluid or reservoir truth. Workbook X/Y values are shown as source numbers only; units, CRS and datum are unspecified.")
     st.info("Well-local marker/checkshot interpolation is available where both files declare compatible TVDSS (m) and TWT (ms). It is not a well-to-seismic tie. SEG-Y headers show 2 ms sampling and zero recording delay, but the textual headers do not explicitly declare a TWT sample domain; trace XY coordinates are zero and coordinate units are unset.")
+    baseline_path = settings.challenge3_root / "volumes" / "Challenge3_Baseline_FilteredScaled_FullStack.sgy"
+    try:
+        identity = (str(baseline_path), baseline_path.stat().st_size, baseline_path.stat().st_mtime_ns)
+        header_geometry = cached_header_geometry(str(baseline_path), identity)
+        conditional_map = conditionally_map_well_coordinates(
+            evidence_matrix, header_geometry,
+            inline_ids=np.asarray(inline_header_ids), crossline_ids=np.asarray(crossline_header_ids))
+        st.markdown("### Conditional workbook-coordinate / Baseline-header comparison")
+        if conditional_map["status"] == "conditional_only":
+            projected = {item["well_id"]: item for item in conditional_map["wells"]}
+            rows = [{"Well": row["well_id"], "Conditional SEG-Y IL": round(projected[row["well_id"]]["conditional_inline_id"], 1)
+                     if projected[row["well_id"]].get("conditional_inline_id") is not None else "—",
+                     "Conditional SEG-Y XL": round(projected[row["well_id"]]["conditional_crossline_id"], 1)
+                     if projected[row["well_id"]].get("conditional_crossline_id") is not None else "—",
+                     "Within Baseline header axes": projected[row["well_id"]].get("inside_header_axis_extent", "—")}
+                    for row in evidence_matrix]
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.warning("This is a numerical consistency test only. The Baseline affine fit predicts sampled CDP headers well, and Well-2 is near the independent DUG location note; workbook and SEG-Y CRS, coordinate units, datum, well trajectory, and physical seismic tie remain unverified. Do not use these points as confirmed reservoir associations. Monitor CDP coordinates do not pass the same geometry-consistency test.")
+            st.caption(f"Baseline header-only sample: {header_geometry['sampled_trace_count']} traces; spatial holdout R² (X/Y) {header_geometry['affine_geometry']['holdout_r2_x_y']}; p95 holdout residual {header_geometry['affine_geometry']['holdout_error_coordinate_units_unknown']['p95']:.3f} in undeclared coordinate units. No amplitudes were loaded for this check.")
+        else:
+            st.info(f"Conditional coordinate comparison unavailable: {conditional_map.get('reason', 'header fit unavailable')}")
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        st.info(f"Header-only conditional coordinate comparison unavailable: {exc}")
     st.markdown('### Evidence by source well')
     if well_keys:
         selected_well=st.selectbox('Select source well',well_keys,key='well_evidence_selected')
