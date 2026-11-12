@@ -25,7 +25,7 @@ def request_slot(settings):
 
 
 def _client(settings: LLMSettings):
-    if not settings.base_url: raise RuntimeError('No LLM endpoint configured')
+    if not settings.base_url: raise RuntimeError('No LLM endpoint configured. Set RTM_LLM_BASE_URL to enable the approved service.')
     try:
         from openai import OpenAI
     except ImportError as exc:
@@ -55,7 +55,7 @@ def explain_evidence(evidence: dict[str,Any], settings: LLMSettings | None = Non
     payload = json.dumps(evidence,ensure_ascii=False,allow_nan=False)
     if len(payload.encode()) > min(max_payload_bytes,24000):
         raise ValueError('Evidence exceeds bounded payload; arrays/volumes are not permitted')
-    if not settings.base_url: raise RuntimeError('No LLM endpoint configured')
+    if not settings.base_url: raise RuntimeError('No LLM endpoint configured. Set RTM_LLM_BASE_URL to enable the approved service.')
     if evidence.get('data_classification','unknown') not in {'synthetic','public'} and not settings.real_data_enabled:
         raise PermissionError('Data-sharing policy gate blocks real or unclassified evidence')
     options = {}
