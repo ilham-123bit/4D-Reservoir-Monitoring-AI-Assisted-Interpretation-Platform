@@ -328,4 +328,3 @@ def evaluate_conditional_window(baseline, monitor, missing_trace_mask, candidate
             "assigning a fluid or development mechanism."
         ),
     }
-
