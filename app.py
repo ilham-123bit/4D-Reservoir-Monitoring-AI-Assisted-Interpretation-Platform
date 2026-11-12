@@ -862,11 +862,20 @@ if page == "Reservoir Command Center":
             st.info("No compatible source-local I-100 windows fall within the proposed Baseline header frame. No reservoir interval was invented.")
         else:
             st.warning("Conditional test only: Baseline header coordinates, workbook X/Y frame, sample-zero TWT, well-to-seismic tie and physical 4D registration are not independently verified.")
-            st.caption(f"Evidence source: {evidence_source}. The three sample-origin cases are alternative assumptions, not additional surveys; NRMS is not ranked as recovery potential.")
+            st.caption(f"Evidence source: {evidence_source}. The three sample-origin cases are alternative assumptions, not additional surveys; NRMS is not ranked as recovery potential. A bounded same-sample spatial contrast is also computed around each conditional marker window.")
             def _display_number(value, places=1):
                 return round(float(value), places) if value is not None and np.isfinite(value) else "—"
-            st.dataframe([
-                {"Well": case["well_id"], "Assumed sample origin (ms)": case["assumed_time_origin_ms"],
+            _scenario_spatial = {}
+            _scenario_rows = []
+            for case, result in scenario_results:
+                _scenario_id = conditional_scenario_key(case)
+                _local = screen_local_compartments(
+                    baseline, monitor, paired_missing, case["array_location"],
+                    spatial_radius=12, half_window=10, core_radius=2,
+                    min_supported_samples=12, min_support_fraction=0.8)
+                _scenario_spatial[_scenario_id] = _local
+                _scenario_rows.append(
+                    {"Well": case["well_id"], "Assumed sample origin (ms)": case["assumed_time_origin_ms"],
                  "IL": case["segy_inline_id"], "XL": case["segy_crossline_id"],
                  "Sample index": case["array_location"][2],
                  "Measured NRMS (%)": _display_number(result["observed"]["nrms_percent"]),
@@ -877,9 +886,25 @@ if page == "Reservoir Command Center":
                  "NRMS after tested lag (%)": _display_number(result["best_lag_nrms_percent"]),
                  "Valid paired samples": result["observed"]["valid_pairs"],
                  "Paired support (%)": _display_number(100 * result["observed"]["support_fraction"], 2),
-                 "Comparison": result["response_vs_off_window_controls"]}
-                for case, result in scenario_results
-            ], hide_index=True, width="stretch")
+                 "Comparison": result["response_vs_off_window_controls"],
+                 "Local core NRMS (%)": _display_number(_local.get("core_median_nrms_percent")),
+                 "Local ring NRMS (%)": _display_number(_local.get("surrounding_median_nrms_percent")),
+                 "Core − ring (pp)": _display_number(_local.get("spatial_nrms_contrast_percentage_points")),
+                 "Spatial pattern": _local.get("pattern", _local.get("status"))}
+                )
+            st.dataframe(_scenario_rows, hide_index=True, width="stretch")
+            _spatially_distinct = sum(
+                item.get("pattern") in {
+                    "selected_region_more_responsive_than_neighborhood",
+                    "selected_region_less_responsive_than_neighborhood",
+                } for item in _scenario_spatial.values())
+            st.markdown(
+                f"**Compartment contrast result:** {_spatially_distinct} of "
+                f"{len(_scenario_spatial)} conditional well-origin windows show a "
+                "distinct core-versus-ring NRMS contrast under the bounded screen. "
+                "A locally quiet window is not evidence of unswept hydrocarbons; "
+                "a spatially distinct response would still require a tied interval and repeatability review."
+            )
             st.markdown("#### Ranked next investigations · evidence actions, not recovery targets")
             for action in conditional_follow_up_actions(scenario_results):
                 st.markdown(f"**{action['rank']}. {action['action']}**")
@@ -908,6 +933,7 @@ if page == "Reservoir Command Center":
                     f"IL {by_key[key][0]['segy_inline_id']} / XL {by_key[key][0]['segy_crossline_id']}"),
                 key="command_conditional_i100_scenario_v2")
             focused_case, focused_result = by_key[selected_key]
+            focused_spatial = _scenario_spatial.get(selected_key, {})
             observed = focused_result["observed"]
             support_fraction = float(observed["support_fraction"])
             support_total = (int(round(observed["valid_pairs"] / support_fraction))
@@ -920,6 +946,50 @@ if page == "Reservoir Command Center":
                 f"paired support {observed['valid_pairs']}/{support_total} samples.")
             st.markdown("**Interpretation:** " + focused_result["interpretation"])
             st.markdown("**Next test:** " + focused_result["next_test"])
+            if focused_spatial.get("status") == "measured_local_spatial_contrast":
+                _core = focused_spatial["core_median_nrms_percent"]
+                _ring = focused_spatial["surrounding_median_nrms_percent"]
+                st.markdown(
+                    f"**Nearby response context:** the 5×5-trace core median is "
+                    f"{_core:.2f}% NRMS; the supported surrounding ring median is "
+                    f"{_ring:.2f}% (core − ring "
+                    f"{focused_spatial['spatial_nrms_contrast_percentage_points']:+.2f} "
+                    f"percentage points). The measured pattern is "
+                    f"**{focused_spatial['pattern'].replace('_', ' ')}**."
+                )
+                _i0, _i1, _x0, _x1, _, _ = focused_spatial["bounds"]
+                _spatial_fig = go.Figure(go.Heatmap(
+                    z=focused_spatial["nrms_percent_map"],
+                    x=np.asarray(crossline_header_ids[_x0:_x1]),
+                    y=np.asarray(inline_header_ids[_i0:_i1]),
+                    colorscale="Viridis", colorbar={"title": "NRMS (%)"},
+                    hovertemplate="IL %{y} · XL %{x}<br>NRMS %{z:.1f}%<extra></extra>"))
+                _spatial_fig.add_trace(go.Scatter(
+                    x=[focused_case["segy_crossline_id"]],
+                    y=[focused_case["segy_inline_id"]], name="Conditional marker window",
+                    mode="markers", marker={"size": 12, "color": "#57e6e2",
+                                             "symbol": "circle-open", "line": {"width": 3}}))
+                for _name, _candidate, _colour in (
+                    ("Stronger local response", focused_spatial.get("change_candidate"), "#57e6e2"),
+                    ("Relatively quiet trace", focused_spatial.get("quiet_candidate"), "#ffcc70")):
+                    if _candidate:
+                        _mi, _mx, _ = _candidate["array_location"]
+                        _spatial_fig.add_trace(go.Scatter(
+                            x=[crossline_header_ids[_mx]], y=[inline_header_ids[_mi]],
+                            name=_name, mode="markers", marker={"size": 10, "color": _colour,
+                                "symbol": "diamond-open", "line": {"width": 2}}))
+                _spatial_fig.update_layout(
+                    template="plotly_dark", paper_bgcolor="#080d0e", plot_bgcolor="#101719",
+                    font={"color": "#ffffff"}, height=340,
+                    margin={"l": 30, "r": 20, "t": 20, "b": 40},
+                    xaxis_title="SEG-Y crossline ID", yaxis_title="SEG-Y inline ID")
+                st.plotly_chart(_spatial_fig, width="stretch", theme=None,
+                                key="conditional_i100_local_spatial_contrast")
+                st.caption(
+                    "Map is calculated from paired Baseline-grid samples at the selected "
+                    "assumed origin. It shows response context, not a verified reservoir "
+                    "compartment or fluid-sweep map."
+                )
             st.caption("The signed value uses source amplitude units. Lag search is diagnostic only; it does not register or alter either survey. Off-window windows are local comparisons, not verified unchanged reservoir controls.")
             if focused_result["response_vs_off_window_controls"] == "larger_change_than_local_off_window_comparisons":
                 st.warning("This scenario exceeds the configured local-control comparison; it is a follow-up for repeatability and tie QC, not a recovery target.")
