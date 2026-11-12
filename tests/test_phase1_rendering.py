@@ -68,7 +68,6 @@ class DashboardRenderingTests(unittest.TestCase):
                 if page not in ('Overview and QC','Well inventory','Recovery intelligence'):
                     next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value(page).run()
                 self.assertEqual([e.message for e in app.exception], [], page)
-                self.assertIn(warning, [x.value for x in app.warning], page)
                 self.assertEqual(len(app.slider), 0, f'{page} must not expose manual coordinate sliders')
                 if page == '4D comparison':
                     self.assertEqual(len(app.sidebar.slider), 0)

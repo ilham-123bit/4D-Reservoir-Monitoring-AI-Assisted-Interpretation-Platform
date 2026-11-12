@@ -520,6 +520,7 @@ if full_field_registry_value:
         full_field_registry_error=type(exc).__name__
         full_field_registry=None
 if full_field_registry and full_field_registry['entries']:
+    full_field_registry_status = "active"
     registry=None;guided_result=None;guided_finding=None
     field_entries=full_field_registry['entries'];field_ids=[item['id'] for item in field_entries]
     if st.session_state.get('field_registry_identity')!=full_field_registry['id']:
@@ -532,11 +533,11 @@ if full_field_registry and full_field_registry['entries']:
     for key,value in zip(('shared_inline','shared_crossline','shared_sample'),field_finding['array_location']):
         st.session_state[key]=value
 elif full_field_registry is not None:
-    st.success('Full-field results validated; no findings met the configured screening criteria.')
+    full_field_registry_status = "complete_empty"
 elif full_field_registry_error:
-    st.error('Full-field findings failed validation. The prior accepted registry remains unchanged; any bounded results below are preliminary only.')
+    full_field_registry_status = "invalid"
 else:
-    st.info('Full-field findings are not active. Any available bounded screening remains preliminary and is not a global ranking.')
+    full_field_registry_status = "not_active"
 
 # The Stage 3 assessment is a small checksummed interpretation package. Loading it
 # validates only its JSON/CSV/PDF artifacts; no seismic or full-field score maps are
@@ -1052,7 +1053,7 @@ if page == "Reservoir Command Center":
         metric[1].metric("Classical ML consensus voxels", f"{int(consensus.get('voxel_count', 0)):,}", help="Mahalanobis + PCA + GMM flags; Isolation Forest flags absent in this set.")
         metric[2].metric("Verified reservoir ties", "0", help="No finding has a verified well/horizon/sample association.")
         metric[3].metric("Recovery opportunities", f"{len(stage3_registry['recovery_opportunities'])}", help="Only independently supported opportunities qualify.")
-        st.warning("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only. Sample origin and well-to-seismic tie remain unresolved.")
+        st.caption("Registration status: preliminary screening only · details in Confidence & QC.")
 
         if selected:
             finding = selected["finding"]
@@ -1183,6 +1184,13 @@ elif page == "Gemma AI Copilot":
 
 elif page == "Overview and QC":
     page_header("Survey overview & QC", "Coverage, measured data quality, and preliminary finding evidence.")
+    if full_field_registry_status == "not_active":
+        st.info("Full-field findings are not active; the screening records shown elsewhere are not a global ranking.")
+    elif full_field_registry_status == "invalid":
+        st.error("Full-field findings failed validation; no unvalidated registry is displayed.")
+    elif full_field_registry_status == "complete_empty":
+        st.success("Full-field results validated; no findings met the configured screening criteria.")
+    st.warning("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.")
     section("Scientific readiness")
     st.markdown(
         "- **Trace-key pairing · VERIFIED:** common Baseline/Monitor inline-crossline keys are paired; Monitor-only keys are excluded from paired attributes.\n"
@@ -2107,7 +2115,7 @@ else:
         metric_cols[1].metric("Candidate voxels", f"{candidate_voxels:,}")
         metric_cols[2].metric("Multi-model consensus voxels", f"{consensus['voxel_count']:,}")
         metric_cols[3].metric("Verified reservoir / recovery targets", "0 / 0")
-        st.info("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not verified. Sample origin and well-to-seismic tie are unresolved. Findings are seismic screening evidence; they do not establish fluid movement or remaining hydrocarbons.")
+        st.caption("Recovery targets are not verified; review the evidence gates in Confidence & QC.")
 
         st.markdown("### Which changes matter? · first review the QC action queue")
         selection_ids = [item["id"] for item in stage3_investigations]
