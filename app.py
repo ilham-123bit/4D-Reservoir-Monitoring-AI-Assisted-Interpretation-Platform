@@ -1891,4 +1891,8 @@ else:
                 {"Evidence component": "Bayesian evidence fusion", "Execution": "Prototype code available", "Validation boundary": "No calibrated class likelihoods or posterior probability published"},
                 {"Evidence component": "3D convolutional autoencoder", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
                 {"Evidence component": "Siamese 3D CNN", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
-            ], use_co
+            ], use_container_width=True, hide_index=True)
+            st.caption("Bayesian and neural outputs are not fused into the discovery list unless independently trained/calibrated and validated. Synthetic training results, if run, are computational experiments only.")
+        st.markdown(f"**Stage 3 package** · `{stage3_registry['id'][:16]}` · {len(stage3_registry['checksums'])} checksummed artifacts · schema `{stage3_registry['schema']}`")
+
+# Autosync acceptance canary: source-only, non-functional deployment check.
