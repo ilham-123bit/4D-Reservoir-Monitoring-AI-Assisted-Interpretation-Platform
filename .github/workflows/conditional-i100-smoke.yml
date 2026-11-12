@@ -1,0 +1,28 @@
+name: Conditional I-100 numerical smoke
+on:
+  pull_request:
+    paths:
+      - 'src/reservoir_time_machine/analysis/conditional_reservoir.py'
+      - 'scripts/hpc/run_conditional_i100.py'
+      - 'tests/test_conditional_reservoir.py'
+      - 'app.py'
+      - '.github/workflows/conditional-i100-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  numerical-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install scientific runtime
+        run: python -m pip install -e .
+      - name: Compile changed numerical paths and dashboard
+        run: python -m compileall -q src/reservoir_time_machine/analysis/conditional_reservoir.py scripts/hpc/run_conditional_i100.py app.py
+      - name: Test bounded well/seismic scenarios and negative controls
+        run: PYTHONPATH=src python -m unittest discover -s tests -p 'test_conditional_reservoir.py' -v
