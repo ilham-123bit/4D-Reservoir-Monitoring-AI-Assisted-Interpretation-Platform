@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from reservoir_time_machine.attributes.difference import calculate_sample_attributes
+from reservoir_time_machine.attributes.structural import local_waveform_similarity
 from reservoir_time_machine.data_audit.audit import WELL_FILES
 from reservoir_time_machine.data.readiness import assess_capabilities
 from reservoir_time_machine.data_ingest.cache_identity import paired_cache_identity, paired_cache_provenance
@@ -1334,6 +1335,46 @@ elif page == "4D comparison":
                 name="Missing paired trace coverage"))
         col.plotly_chart(section_fig.update_layout(
             title=title, xaxis_title=x_title, yaxis_title=y_title, height=540), width="stretch")
+    with st.expander("Local structural-continuity screening", expanded=True):
+        baseline_similarity = local_waveform_similarity(
+            baseline, inline, crossline, sample, radius=24, window_samples=9,
+            min_window_support=7, excluded_trace_mask=paired_missing,
+        )
+        monitor_similarity = local_waveform_similarity(
+            monitor, inline, crossline, sample, radius=24, window_samples=9,
+            min_window_support=7, excluded_trace_mask=paired_missing,
+        )
+        (il0, il1), (xl0, xl1) = baseline_similarity["array_bounds"]
+        inline_axis = np.asarray(inline_header_ids[il0:il1], dtype=int)
+        crossline_axis = np.asarray(crossline_header_ids[xl0:xl1], dtype=int)
+        similarity_columns = st.columns(2)
+        for column, result, title in (
+            (similarity_columns[0], baseline_similarity, "Baseline 1995 · local trace similarity"),
+            (similarity_columns[1], monitor_similarity, "Monitor 2006 · local trace similarity"),
+        ):
+            fig = go.Figure(go.Heatmap(
+                z=result["similarity"], x=crossline_axis, y=inline_axis,
+                colorscale="Viridis", zmin=0, zmax=1,
+                colorbar={"title": "|correlation|"},
+                hovertemplate="XL %{x} · IL %{y}<br>similarity %{z:.3f}<extra></extra>",
+            ))
+            fig.add_trace(go.Scatter(
+                x=[crossline_axis[result["center_local_index"][1]]],
+                y=[inline_axis[result["center_local_index"][0]]],
+                mode="markers", marker={"symbol": "cross", "size": 12, "color": "#ffffff"},
+                name="Selected investigation",
+            ))
+            column.plotly_chart(fig.update_layout(
+                title=title, xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID",
+                height=420, template="plotly_dark",
+            ), width="stretch", theme=None)
+        s0, s1 = baseline_similarity["sample_bounds"]
+        st.caption(
+            f"Bounded {il1-il0}×{xl1-xl0} source-trace window; samples {s0}–{s1-1} (array indices). "
+            "Each cell is mean absolute Pearson correlation with valid face-adjacent paired-grid traces. "
+            "This is a structural-continuity screening proxy, not calibrated seismic coherence, a fault/channel classifier, "
+            "or evidence of reservoir connectivity. Missing paired traces and invalid windows are excluded."
+        )
     inline_id = int(inline_header_ids[inline]); crossline_id = int(crossline_header_ids[crossline])
     section(f"Selected investigation · SEG-Y IL {inline_id} · XL {crossline_id} · Sample index {sample}")
     base_amp, mon_amp = float(baseline[inline, crossline, sample]), float(monitor[inline, crossline, sample])

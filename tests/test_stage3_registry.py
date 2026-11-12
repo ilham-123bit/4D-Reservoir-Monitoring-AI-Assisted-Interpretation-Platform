@@ -192,6 +192,10 @@ class Stage3RegistryTests(unittest.TestCase):
         self.assertEqual(len(app.slider), 0)
         app.sidebar.radio[0].set_value("4D comparison").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
+        self.assertTrue(any(
+            element.label == "Local structural-continuity screening"
+            for element in app.get("expander")
+        ))
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
         app.sidebar.radio[0].set_value("Evidence explanation").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
