@@ -784,7 +784,7 @@ if page == "Reservoir Command Center":
                         plot_bgcolor="#101719", font={"color": "#ffffff"},
                         height=360, margin={"l": 30, "r": 20, "t": 20, "b": 40},
                         xaxis_title="SEG-Y crossline ID", yaxis_title="SEG-Y inline ID")
-                    st.plotly_chart(_fig, use_container_width=True, theme=None,
+                    st.plotly_chart(_fig, width="stretch", theme=None,
                                     key="command_real_spatial_evolution")
                     st.markdown("**What we measured:** " + _spatial["interpretation"])
                     st.markdown("**Production-related hypothesis:** " + _decision["production_response"])
