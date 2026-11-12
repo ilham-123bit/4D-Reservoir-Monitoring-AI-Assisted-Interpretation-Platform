@@ -2558,7 +2558,8 @@ if page != "Gemma AI Copilot":
         selected=selected_investigation, scenario_records=_copilot_records,
         evidence_sha256=_copilot_sha,
     )
-    _view_point = [int(inline), int(crossline), int(sample)]
+    _view_point = [int(st.session_state.get(k, v)) for k, v in zip(
+        ("shared_inline", "shared_crossline", "shared_sample"), (inline, crossline, sample))]
     _view_baseline = float(baseline[tuple(_view_point)])
     _view_monitor = float(monitor[tuple(_view_point)])
     _view_valid = bool(
@@ -2580,5 +2581,27 @@ if page != "Gemma AI Copilot":
         "monitor_amplitude_source_units_unspecified": _view_monitor if _view_valid else None,
         "monitor_minus_baseline_source_units_unspecified": _view_monitor - _view_baseline if _view_valid else None,
     })
+    # Include exact measurements from the current connected-region view.
+    # Gemma receives no raw seismic cube and cannot turn these into fluid truth.
+    _current_brief = (_focused if page == "Reservoir Decision Briefing" and
+                      "_focused" in locals()
+                      else _brief if page == "Reservoir Decisions" and "_brief" in locals()
+                      else None)
+    if _current_brief is not None:
+        _copilot_context["evidence"].append({
+            "id": "current-coherent-spatial-response",
+            "category": "measured_connected_seismic_regions",
+            "page": str(page_group),
+            "finding_id": _current_brief["id"],
+            "source_grid": _current_brief["source_array_location"],
+            "stronger_region": _current_brief["stronger_region"],
+            "quieter_region": _current_brief["quieter_region"],
+            "spatial_pattern": _current_brief["spatial_pattern"],
+            "finding": _current_brief["finding_text"],
+            "alternative_mechanisms": _current_brief["why"],
+            "conditional_action": _current_brief["next_decision"],
+            "hydrocarbon_state": _current_brief["bypassed_hydrocarbon"],
+            "drilling_location": None,
+        })
     with st.expander("Ask Gemma about this view", expanded=False):
         render_gemma_copilot(_copilot_context)
