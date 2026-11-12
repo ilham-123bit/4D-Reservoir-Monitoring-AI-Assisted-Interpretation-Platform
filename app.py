@@ -40,6 +40,9 @@ from reservoir_time_machine.analysis.recovery_intelligence import (
     select_investigation,
     reservoir_evolution_readiness,
 )
+from reservoir_time_machine.analysis.local_compartment_screen import (
+    screen_local_compartments, development_hypothesis,
+)
 from reservoir_time_machine.analysis.conditional_reservoir import (
     conditional_follow_up_actions, conditional_i100_locations, conditional_scenario_key,
     evaluate_conditional_window, load_conditional_i100_evidence,
@@ -728,6 +731,86 @@ if page not in ("Overview and QC", "Reservoir Command Center", "Gemma AI Copilot
 if page == "Reservoir Command Center":
     page_header("Angsi Field · 4D Reservoir Intelligence",
                 "Baseline 1995 → Monitor 2006 · evidence-led surveillance and recovery investigation")
+
+    # Scientific local contrasts are calculated from bounded actual source
+    # samples. The score map is NOT a reservoir mask or sweep classifier.
+    if selected_investigation and isinstance(selected_investigation.get("finding"), dict):
+        _source_finding = selected_investigation["finding"]
+        _source_position = _source_finding.get(
+            "array_location", _source_finding.get("representative"))
+        if _source_position is not None:
+            try:
+                _spatial = screen_local_compartments(
+                    baseline, monitor, paired_missing, _source_position)
+                _decision = development_hypothesis(_spatial)
+                st.markdown("### Reservoir evolution · changed versus relatively quiet regions")
+                st.markdown("**" + _decision["headline"] + "**")
+                st.caption(
+                    "Actual 1995 and 2006 paired seismic at the selected finding. "
+                    "A spatial seismic contrast is not a fluid or swept-reservoir classification.")
+                if _spatial["status"] == "measured_local_spatial_contrast":
+                    _m1, _m2, _m3 = st.columns(3)
+                    _m1.metric("Selected region · median NRMS",
+                               f"{_spatial['core_median_nrms_percent']:.1f}%")
+                    _m2.metric("Nearby region · median NRMS",
+                               f"{_spatial['surrounding_median_nrms_percent']:.1f}%")
+                    _m3.metric("Local response contrast",
+                               f"{_spatial['spatial_nrms_contrast_percentage_points']:+.1f} pp")
+                    _i0, _i1, _x0, _x1, _, _ = _spatial["bounds"]
+                    _fig = go.Figure(go.Heatmap(
+                        z=_spatial["nrms_percent_map"],
+                        x=np.asarray(crossline_header_ids[_x0:_x1]),
+                        y=np.asarray(inline_header_ids[_i0:_i1]),
+                        colorscale="Viridis",
+                        colorbar={"title": "Local NRMS (%)"},
+                        hovertemplate="IL %{y} · XL %{x}<br>NRMS %{z:.1f}%<extra></extra>",
+                    ))
+                    for _label, _mark, _color in (
+                        ("Stronger response", _spatial["change_candidate"], "#57e6e2"),
+                        ("Relatively quiet", _spatial["quiet_candidate"], "#ffcc70"),
+                    ):
+                        if _mark:
+                            _mi, _mx, _ms = _mark["array_location"]
+                            _fig.add_trace(go.Scatter(
+                                x=[crossline_header_ids[_mx]],
+                                y=[inline_header_ids[_mi]],
+                                name=_label, mode="markers",
+                                marker={"size": 13, "color": _color, "symbol": "circle-open",
+                                        "line": {"width": 3, "color": _color}},
+                                hovertemplate=_label + " · sample " + str(_ms) + "<extra></extra>",
+                            ))
+                    _fig.update_layout(
+                        template="plotly_dark", paper_bgcolor="#080d0e",
+                        plot_bgcolor="#101719", font={"color": "#ffffff"},
+                        height=360, margin={"l": 30, "r": 20, "t": 20, "b": 40},
+                        xaxis_title="SEG-Y crossline ID", yaxis_title="SEG-Y inline ID")
+                    st.plotly_chart(_fig, use_container_width=True, theme=None,
+                                    key="command_real_spatial_evolution")
+                    st.markdown("**What we measured:** " + _spatial["interpretation"])
+                    st.markdown("**Production-related hypothesis:** " + _decision["production_response"])
+                    st.markdown("**Possible limited sweep:** " + _decision["poor_sweep"])
+                    st.markdown("**Recovery options worth evaluating:**")
+                    for _option in _decision["development_options"]:
+                        st.markdown("- " + _option)
+                    with st.expander("Mechanisms, competing explanations and six technical decisions"):
+                        for _mechanism in _decision["mechanisms"]:
+                            st.markdown("**" + _mechanism["hypothesis"] +
+                                        " · " + _mechanism["status"] + "**")
+                            st.caption("For: " + _mechanism["positive"] +
+                                       " Against / unknown: " + _mechanism["contradiction"])
+                        for _role, _action in _decision["discipline_actions"].items():
+                            st.markdown("**" + _role + ":** " + _action)
+                        st.caption(
+                            "Local contrasts share array sample indices, not verified "
+                            "reservoir TWT. NRMS is a screening measurement, not a "
+                            "chance of success. Physical 4D registration and well tie "
+                            "must be established before fluid or drilling attribution.")
+                else:
+                    st.info(_spatial["interpretation"])
+            except (ValueError, TypeError, IndexError, RuntimeError) as _spatial_error:
+                st.info(
+                    "The selected finding has insufficient supported local data for "
+                    f"a spatial reservoir-response comparison ({type(_spatial_error).__name__}).")
 
     # Prefer a checksummed, cache-identity-matched result from the bounded HPC
     # experiment. If no saved artifact is configured, the same bounded windows
