@@ -667,7 +667,7 @@ with st.sidebar:
         "02 — 3D Reservoir": "3D discovery map",
         "03 — 4D Reservoir Evolution": "4D comparison",
         "04 — Geology & Wells": "Well inventory",
-        "05 — Development Studio": "Recovery intelligence",
+        "05 — Development Studio": "Reservoir Decisions",
     }[page_group]
     subviews = {
         "HOME — Reservoir Intelligence": ["Reservoir Decision Briefing"],
@@ -675,7 +675,7 @@ with st.sidebar:
         "02 — 3D Reservoir": ["3D discovery map", "3D explorer"],
         "03 — 4D Reservoir Evolution": ["4D comparison", "Survey transition"],
         "04 — Geology & Wells": ["Well inventory"],
-        "05 — Development Studio": ["Recovery intelligence"],
+        "05 — Development Studio": ["Reservoir Decisions", "Recovery intelligence"],
     }[page_group]
     if len(subviews) > 1:
         page = st.sidebar.selectbox("Section", subviews, key=f"section_{page_group}")
@@ -2264,6 +2264,114 @@ elif page == "Evidence explanation":
             else:
                 st.warning("Transmission policy did not authorize this request; no payload was sent.")
         st.caption("Gemma can select only constrained statements and exact supplied values. It does not validate geology; service output remains subject to human review.")
+
+elif page == "Reservoir Decisions":
+    app_header.empty()
+    page_header("Development Studio", "Measured opportunity areas · conditional choices · source coordinates")
+    if full_field_registry and full_field_registry["entries"]:
+        _decisions = [item["finding"] for item in full_field_registry["entries"]]
+        _decision_source = "full_field"
+    elif stage3_registry:
+        _decisions = stage3_registry["historical_findings"]
+        _decision_source = "historical_stage3"
+    elif registry and registry["entries"]:
+        _decisions = [item["finding"] for item in registry["entries"]]
+        _decision_source = "bounded"
+    else:
+        _decisions = []
+        _decision_source = "none"
+    if not _decisions:
+        st.info("No source-linked candidate catalogue is active. See Confidence & QC.")
+    else:
+        _idx = {item["id"]: item for item in _decisions}
+        _ids = list(_idx)
+        if st.session_state.get("development_focus_id") not in _idx:
+            _previous = st.session_state.get("selected_finding_id")
+            st.session_state["development_focus_id"] = _previous if _previous in _idx else _ids[0]
+        _key = st.selectbox("Source-linked investigation", _ids,
+                            format_func=lambda key: f"Area {_ids.index(key)+1:02d} · {key[-12:]}",
+                            key="development_focus_id")
+        _candidate = _idx[_key]
+        _loc = _candidate.get("array_location", _candidate.get("representative"))
+        try:
+            _patch = cached_coherent_response(
+                dataset_cache_identity, _key, tuple(_loc),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _brief = candidate_briefing(_candidate, _patch, source=_decision_source)
+        except (ValueError, KeyError, IndexError, TypeError) as _err:
+            st.error("This finding could not be mapped to supported source traces.")
+        else:
+            selected_investigation = {"id": _key, "kind": _decision_source + "_spatial_screen",
+                                      "finding": _candidate}
+            if st.session_state.get("last_development_focus_id") != _key:
+                st.session_state["selected_finding_id"] = _key
+                st.session_state["last_development_focus_id"] = _key
+                if _decision_source == "full_field":
+                    st.session_state["registry_selection"] = _key
+                elif _decision_source == "historical_stage3":
+                    st.session_state["stage3_finding_selection"] = _key
+                _jump_to_finding(_loc)
+                st.session_state["last_synced_finding_id"] = _key
+            _area = _brief["quieter_region"] or _brief["stronger_region"]
+            _where = (_area or {}).get("center_segy") or _candidate.get("segy_location")
+            if not _where:
+                _where = {"inline_id": int(inline_header_ids[_loc[0]]),
+                          "crossline_id": int(crossline_header_ids[_loc[1]]),
+                          "sample_index": int(_loc[2])}
+            st.markdown(
+                f"### Area · IL {_where['inline_id']} · XL {_where['crossline_id']} · "
+                f"sample {_where['sample_index']}"
+            )
+            _one, _two, _three = st.columns(3)
+            with _one:
+                st.markdown("**Seismic evidence**")
+                st.write(_brief["finding_text"])
+            with _two:
+                st.markdown("**Reservoir mechanism to test**")
+                st.write(_brief["why"])
+            with _three:
+                st.markdown("**Engineering decision**")
+                st.write(_brief["next_decision"])
+
+            if _brief["stronger_region"] and _brief["quieter_region"]:
+                _change = _brief["stronger_region"]
+                _quiet = _brief["quieter_region"]
+                st.markdown(
+                    f"**Observed comparison:** stronger {_change['median_nrms_percent']:.1f}% NRMS "
+                    f"at IL {_change['center_segy']['inline_id']}/XL {_change['center_segy']['crossline_id']}; "
+                    f"quieter {_quiet['median_nrms_percent']:.1f}% NRMS "
+                    f"at IL {_quiet['center_segy']['inline_id']}/XL {_quiet['center_segy']['crossline_id']}."
+                )
+            st.markdown("### Development options — evidence gates")
+            st.dataframe([
+                {"Option": "Infill / sidetrack", "Current decision": "Conditional only",
+                 "Required support": "Reservoir-quality sand at quieter source area, supported oil saturation and drillable geometry"},
+                {"Option": "Recompletion", "Current decision": "Evaluate if existing well intersects target",
+                 "Required support": "Verified well trajectory, untapped completion interval and production history"},
+                {"Option": "Injection or sweep optimization", "Current decision": "Model scenario, not field instruction",
+                 "Required support": "Pressure/rate/injection history and plausible reservoir connectivity"},
+                {"Option": "Targeted reservoir surveillance", "Current decision": "Highest readiness",
+                 "Required support": "Tie sampled seismic interval, local repeatability and well-pressure comparison"},
+            ], width="stretch", hide_index=True)
+            with st.expander("Six-discipline technical decisions", expanded=False):
+                _il, _xl, _si = _where["inline_id"], _where["crossline_id"], _where["sample_index"]
+                st.markdown(
+                    f"**Geophysicist:** At IL {_il}/XL {_xl}, test repeatable 4D amplitude and phase against vintage registration.\n\n"
+                    f"**Geologist:** Map facies, faults and sand continuity between stronger and quieter patches near sample {_si}.\n\n"
+                    f"**Petrophysicist:** Check oil-bearing reservoir quality and sonic-density compatibility at spatially eligible wells.\n\n"
+                    f"**Reservoir engineer:** Test depletion, pressure and saturation scenarios across this candidate's response pattern.\n\n"
+                    f"**Production engineer:** Match rate, GOR, water cut and injection changes with any spatially verified nearby wells.\n\n"
+                    f"**Drilling engineer:** Screen infill/sidetrack feasibility only if reservoir geometry and hydrocarbon presence are supported."
+                )
+            st.caption(
+                "This is a source-grid investigation, not a verified oil pool, swept fraction, fluid-flow arrow "
+                "or sanctioned drilling target. Candidate priority is not Chance of Success."
+            )
+            _download_record = dict(_brief)
+            st.download_button("Export investigation evidence (JSON)",
+                               json.dumps(_download_record, indent=2),
+                               file_name=f"rtm-investigation-{_key}.json",
+                               mime="application/json")
 
 else:
     page_header("Development Studio", "Where to investigate, what to test and why.")
