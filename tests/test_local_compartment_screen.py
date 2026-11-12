@@ -76,8 +76,9 @@ class LocalCompartmentScreenTests(unittest.TestCase):
         self.monitor[13:18, 13:18, 10:35] *= 0.5
         result = screen_local_compartments(self.base, self.monitor, self.missing, [15,15,22])
         self.assertEqual(result["status"], "measured_local_spatial_contrast")
-        self.assertTrue(np.isnan(result["nrms_percent_map"][3,3]))
-        self.assertTrue(np.isnan(result["nrms_percent_map"][4,4]))
+        # Crop starts at IL/XL array index 3, so map indices start at zero.
+        self.assertTrue(np.isnan(result["nrms_percent_map"][0,0]))
+        self.assertTrue(np.isnan(result["nrms_percent_map"][1,1]))
 
 
 if __name__ == "__main__":
