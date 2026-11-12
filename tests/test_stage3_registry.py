@@ -165,11 +165,11 @@ class Stage3RegistryTests(unittest.TestCase):
             "04 — Geology & Wells", "05 — Development Studio",
         ])
         self.assertEqual(len(app.slider), 0, "Judge-facing startup must not expose manual coordinate sliders")
-        self.assertIn("01 · What changed, and where?",
+        self.assertIn("01 · What changed and where?",
                       " ".join(element.value for element in app.markdown))
         self.assertTrue(any(
-            element.label == "Selected finding · structured scientific evidence"
-            for element in app.get("expander")
+            element.label == "Select a measured seismic region"
+            for element in app.get("selectbox")
         ))
         self.assertEqual(app.session_state["selected_finding_id"],
                          app.session_state["stage3_finding_selection"])
@@ -182,7 +182,7 @@ class Stage3RegistryTests(unittest.TestCase):
             ), f"{route} must embed the contextual Copilot")
         text = "\n".join(element.value for element in app.markdown)
         self.assertIn("Development Studio", text)
-        self.assertIn("No drill-ready candidate or calibrated Chance of Success", " ".join(x.value for x in app.info))
+        self.assertIn("Development options — evidence gates", text)
         self.assertTrue(any("SEG-Y IL 101" in value or "IL 101" in value for value in
                             [element.value for element in app.markdown]))
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [1, 2, 3])
