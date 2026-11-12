@@ -1073,7 +1073,7 @@ if page == "Reservoir Command Center":
             action_ids = {item["finding"]["id"] for item in stage3_registry["qc_follow_up_actions"]}
             selectable = [item for item in candidates if item["id"] in action_ids]
             if selectable:
-                st.markdown("#### Other areas to review")
+                st.markdown("#### Other follow-up tests")
                 buttons = st.columns(min(4, len(selectable)))
                 for index, item in enumerate(selectable[:4]):
                     buttons[index].button(
@@ -1468,15 +1468,8 @@ elif page == "3D explorer":
 elif page == "4D comparison":
     app_header.empty()
     st.markdown("### 4D · 1995 versus 2006")
-    registration_status = (
-        "Physical 4D registration is not yet verified."
-        if not physical_4d_registration_verified
-        else "Physical 4D registration meets the declared capability requirements."
-    )
     if not physical_4d_registration_verified:
-        registration_warning()
-    else:
-        st.info(registration_status)
+        st.caption("Survey registration is not independently verified · see Confidence & QC.")
     st.caption("Measured seismic difference; fluid interpretation is assessed separately.")
     if selected_investigation is None:
         st.info("Choose a source-linked area to compare the two surveys.")
@@ -2111,7 +2104,7 @@ else:
         metric_cols[3].metric("Verified reservoir / recovery targets", "0 / 0")
         st.caption("No drill-ready target. See Confidence & QC for evidence status.")
 
-        st.markdown("### Areas needing a decision")
+        st.markdown("### Which investigations come first?")
         selection_ids = [item["id"] for item in stage3_investigations]
         selected_id = st.selectbox(
             "Investigation record", selection_ids,
