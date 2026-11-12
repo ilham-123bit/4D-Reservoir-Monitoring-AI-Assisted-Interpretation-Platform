@@ -34,7 +34,7 @@
 - Canonical HPC application is the **only production checkout**. Existing systemd user service runs Streamlit on port **8501**; existing desktop icon opens it. Normal use should not require a persistent manual terminal.
 - Work on reviewed development history and merge only an accepted, non-destructive release to `main`. Eventually **only the `main` remote branch** remains; review the unique old documentation commit before retiring it.
 - The watcher currently auto-publishes allowlisted local source changes and has a separately modified remote-main fast-forward path. **That private watcher rollout/rollback is not yet integration-tested.** A GitHub merge can trigger automatic production deployment. Do not merge until deployment safety is proven.
-- Never publish seismic/well data, private AI endpoints, raw generated scientific artifacts, model checkpoints, secrets, caches, per-user paths or HPC credentials. Never run blanket `git add .` or indiscriminate clean/reset on the canonical checkout.
+- Never publish seismic/well data, private AI endpoints, raw generated scientific artifacts, model checkpoints, secrets, caches, per-user paths or HPC credentials. Stage only individually reviewed public source files. Protect the canonical checkout from destructive cleanup or overwriting local scientific assets.
 - Test: full Python compilation, complete synthetic source suite, numerical/QC invariants, real Angsi bounded tests with checksums and edge exclusions, live-source Streamlit AppTest, actual desktop/browser visual acceptance, Gemma endpoint health and permitted question/reply when configured, false-answer/privacy gates, auto-deploy/rollback and post-release fingerprint/health.
 
 ## Completion definition
