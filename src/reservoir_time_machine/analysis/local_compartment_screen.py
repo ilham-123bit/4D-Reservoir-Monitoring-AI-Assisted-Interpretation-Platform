@@ -42,9 +42,6 @@ def screen_local_compartments(
     if len(location) != 3:
         raise ValueError("Location must include inline/crossline/sample indices")
     pos = [int(v) for v in location]
-    if any(float(v) != n or n < 0 or n >= shape[d] for d, (v, n) in enumerate(zip(location, pos))):
-        # This condition deliberately handles numeric location coercion below.
-        pass
     if any(float(v) != pos[d] or pos[d] < 0 or pos[d] >= shape[d]
            for d, v in enumerate(location)):
         raise ValueError("Location lies outside the source grid")
