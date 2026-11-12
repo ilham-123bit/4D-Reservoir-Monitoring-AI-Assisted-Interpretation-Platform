@@ -1,354 +1,154 @@
-"""Well-source evidence grouped by source identifier, without fabricating a seismic tie."""
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí÷yN‹Z–‹­¦ëeŠw¬ãİˆˆˆ•Ù[\Ûİ\˜ÙH]šY[˜ÙHÜ›İ\YHÛİ\˜ÙHY[YšY\‹Ú]İ]˜XœšXØ][™ÈHÙZ\ÛZXÈYKˆˆˆ‚‚™œ›ÛH]Xˆ[\Ü]š[\Ü™B‚š[\Ü[\H\Èœ‚™œ›ÛH›\×ÛØY\ˆ[\Ü[œÜXİÛ\Â™œ›ÛHÙ[Ú[™›Ü›X][Ûˆ[\ÜØYİÙ[Ú[™›Ü›X][Û‚™œ›ÛHÙ[İX›\È[\Ü™XYİÙ[İX›B‚‚—ÑT’U‘QĞÕT•‘WÓSQTÈHÂˆ”QH‹”U‹”T“H‹”T“R‹”T“WÕ‘“H‹”ÕÑH‹”ÕÕ‹“”RÈ‹ˆ•Óˆ‹•Ó‹•ÓÈ‹•‘ÓÈ‹•‘ĞTÈ‹•“SQH‹•“ÒS‹•”ĞS‘‹ˆ•”ÒSH‹•”ÒS‹••ĞUTˆ‹ÓĞSˆ‹‘ÓĞS‹ŸB‚‚™YˆİÙ[ÚÙ^JY[YšY\ŠN‚ˆˆˆ“›Ü›X[^™HØ\ÙHÛ›NÈ™\Ù\™HYX[š[™Ù[Ûİ\˜ÙHY[YšY\ˆYÚ]Ëˆˆˆ‚ˆ^HİŠY[YšY\ˆÜˆˆŠKœİš\
 
-from pathlib import Path
-import re
+K˜Ø\ÙY›Û
 
-import numpy as np
+BˆX]ÚH™K›X]Ú
+ˆ—ŠÙ[ËWÈO×
+ÊH‹^
+Bˆ™]\›ˆX]Ú™Ü›İ\
+JKœ™\XÙJ—È‹‹HŠKœ™\XÙJˆ‹‹HŠHYˆX]Ú[ÙHˆ‚‚‚™YˆÛ™]×ÙÜ›İ\
 
-from .las_loader import inspect_las
-from .well_information import load_well_information
-from .well_tables import read_well_table
+N‚ˆ™]\›ˆÈœÛİ\˜ÙWÚY[YšY\œÈˆ×KÛÜšØ›ÛÚ×Ü™XÛÜ™Èˆ×K›ÙÜÈˆ×KX›\Èˆ×KˆœÜ]X[Ø\ÜÛØÚX][Û—Ø]˜Z[X›Hˆ˜[ÙK™\İ[YWØ\ÜÛØÚX][Û—Ø]˜Z[X›Hˆ˜[ÙKˆšY[]WÜ[Hˆ˜Ø\ÙKZ[œÙ[œÚ]]™HÛİ\˜ÙHÙ[QÈš[[˜[YHÜ›İ\[™È\ÈÛİ\˜ÙK[]™[Û›HŸB‚‚™YˆİX›WÛ[Y\šX×ÜXÊØ]YÛÜKX›JN‚ˆˆˆÚXÚÈXÛ\™YX›HİXİ\™NÈ\È\È›İHÙZ\ÛZXÈYHÜˆ[\œ™]][Û‹ˆˆˆ‚ˆ^XİYHÈ˜ÚXÚÜÚİÈˆ
+•‘ÔÈ‹•ÕŠKˆ™]šX][ÛœÈˆ
+“QĞˆ‹•‘‹’SÓ‹V’SHŠ_K™Ù]
+Ø]YÛÜJBˆ™\İ[HÈœİ]\ÈˆœÛİ\˜ÙWÜ™XÛÜ™×ÛÛ›H‹›[Y\šX×Ü›İÜÈˆBˆYˆX›Kœ›İ×İÚYÛZ\ÛX]ÚØÛİ[‚ˆ™]\›ˆÊŠœ™\İ[œİ]\Èˆ[œ™\ÛÛ™Yİ˜\šXX›WİÚYÜ›İÜÈ‹ˆœ™X\ÛÛˆˆœ›İÈÚYÈY™™\ÈÜšYÚ[˜[šY[È\™H™\Ù\™YÚ]İ]ÜÚ][Û˜[™\Z\ˆŸBˆYˆ^XİY\È›Û™N‚ˆ™]\›ˆ™\İ[ˆYˆ\JİŠ
+K\\Š
+H›Üˆ[ˆX›K™XÛ\™YØÛÛ[[œÊHOH^XİY‚ˆ™]\›ˆÊŠœ™\İ[œİ]\Èˆ™XÛ\™YØÛÛ[[œ×İ[™^XİY‹ˆœ™X\ÛÛˆˆœÛİ\˜ÙKYXÛ\™YÛÛ[[œÈY™™\ˆœ›ÛH^XİYšY[ÈŸBˆN‚ˆ˜[Y\ÈHœ˜\Ø\œ˜^JÖÙ›Ø]
+˜[YJH›Üˆ˜[YH[ˆ›İÖÎ›[Š^XİY
+WWH›Üˆ›İÈ[ˆX›Kœ›İÜ×K\OY›Ø]
+Bˆ^Ù\
+\Q\œ›Ü‹˜[YQ\œ›ÜŠN‚ˆ™]\›ˆÊŠœ™\İ[œİ]\Èˆ››Û—Û[Y\šX×ÛÜ—ÛZ\ÜÚ[™×ÜÛİ\˜ÙWİ˜[Y\È‹ˆœ™X\ÛÛˆˆ˜HXÛ\™Y[Y\šXÈÛİ\˜ÙHšY[\ÈZ\ÜÚ[™ÈÜˆ›Û‹[[Y\šXÈŸBˆYˆ˜[Y\Ë›™[HOHˆÜˆ˜[Y\ËœÚ\VÌHOHÜˆ›İœš\Ùš[š]J˜[Y\ÊK˜[
 
+N‚ˆ™]\›ˆÊŠœ™\İ[œİ]\Èˆ››Û—Ùš[š]WÜÛİ\˜ÙWİ˜[Y\È‹›[Y\šX×Ü›İÜÈˆ[
+˜[Y\ËœÚ\VÌJHYˆ˜[Y\Ë›™[HOHˆ[ÙHBˆ[š]ÈH\J
+˜[YHÜˆˆŠKœİš\
 
-_DERIVED_CURVE_NAMES = {
-    "PHIE", "PHIT", "PERM", "PERMH", "PERM_TRFM", "SWE", "SWT", "NPHIHC",
-    "VCLB", "VCLD", "VCLW", "VDOLO", "VGAS", "VLIME", "VOIL", "VSAND",
-    "VSHALE", "VSILT", "VWATER", "COALF", "FCOAL",
-}
+K˜Ø\ÙY›Û
 
+H›Üˆ˜[YH[ˆX›K™XÛ\™Yİ[š]ÊBˆYˆØ]YÛÜHOH˜ÚXÚÜÚİÈ‚ˆ\Û[Û›İÛšXÈH›ÛÛ
+œ˜[
+œ™Y™Š˜[Y\ÖÎ‹JHH
+JBˆ[YWÛ[Û›İÛšXÈH›ÛÛ
+œ˜[
+œ™Y™Š˜[Y\ÖÎ‹WJHˆ
+JBˆ[š]×İ˜[YH[š]ÈOH
+›H‹›\ÈŠBˆ™]\›ˆÈœİ]\ÈˆœİXİ\˜[Wİ˜[YÙXÛ\™YØÚXÚÜÚİÜZ\œÈˆYˆ[š]×İ˜[Y[™\Û[Û›İÛšXÈ[™[YWÛ[Û›İÛšXÈ[ÙH˜ÚXÚÜÚİÜX×İØ\›š[™È‹ˆ›[Y\šX×Ü›İÜÈˆ[
+˜[Y\ËœÚ\VÌJK™XÛ\™Yİ[š]Èˆ\İ
+X›K™XÛ\™Yİ[š]ÊKˆ™\Û›Û—ÙXÜ™X\Ú[™Èˆ\Û[Û›İÛšXËİÜİšXİWÚ[˜Ü™X\Ú[™Èˆ[YWÛ[Û›İÛšXËˆœ™X\ÛÛˆˆœÛİ\˜ÙHZ\œÈÛ›NÈØ[\HÜšYÚ[‹][H™[][Û‹[™\ÚXØ[™YÚ\İ˜][Ûˆ™[XZ[ˆ[™\šYšYYŸBˆYİ[š]İ˜[YH›ÛÛ
+[š]È[™[š]ÖÌHOH›HŠBˆYÛ[Û›İÛšXÈH›ÛÛ
+œ˜[
+œ™Y™Š˜[Y\ÖÎ‹JHˆ
+JBˆ™Û[Û›İÛšXÈH›ÛÛ
+œ˜[
+œ™Y™Š˜[Y\ÖÎ‹WJHH
+JBˆ™]\›ˆÈœİ]\Èˆ™\Üİ\™^WÜİXİ\˜[Wİ˜[YÛÜšY[][Û—İ[š]×ÛZ\ÜÚ[™ÈˆYˆYİ[š]İ˜[Y[™YÛ[Û›İÛšXÈ[™™Û[Û›İÛšXÈ[ÙH™]šX][Û—ÜX×İØ\›š[™È‹ˆ›[Y\šX×Ü›İÜÈˆ[
+˜[Y\ËœÚ\VÌJK™XÛ\™Yİ[š]Èˆ\İ
+X›K™XÛ\™Yİ[š]ÊKˆ›YÚ[˜Ü™X\Ú[™ÈˆYÛ[Û›İÛšXË™Û›Û—ÙXÜ™X\Ú[™Èˆ™Û[Û›İÛšXËˆœ™X\ÛÛˆˆš[˜Û[˜][Û‹Ø^š[]][š]È[™™Y™\™[˜ÙH\™H[˜]˜Z[X›NÈ›ÈH˜Z™XİÜH\ÈÛÛ\]YŸB‚‚™YˆX\šÙ\—ØÚXÚÜÚİØÛÜœ™[][ÛœÊÜ›İ\
+N‚ˆˆˆ’[\œÛ]HX\šÙ\ˆ‘ÔÈYØZ[œİHØ[YHÙ[	ÜÈXÛ\™YÚXÚÜÚİZ\œË‚‚ˆ\È\ÈHÛİ\˜ÙK]X›H™[][ÛœÚ\Û›Kˆ]Ù\È›İYHHÙ[X\šÙ\ˆÂˆHÑQËVHØ[\K[™]™Y\Ù\È^˜\Û][ÛˆÜˆÜÚ][Û˜[›İÈ™\Z\‹‚ˆˆˆ‚ˆÚXÚÜÚİÈHÚ][H›Üˆ][H[ˆÜ›İ\™Ù]
+X›\È‹×JHYˆ][K™Ù]
+˜Ø]YÛÜHŠHOH˜ÚXÚÜÚİÈ—BˆX\šÙ\œÈHÚ][H›Üˆ][H[ˆÜ›İ\™Ù]
+X›\È‹×JHYˆ][K™Ù]
+˜Ø]YÛÜHŠHOH›X\šÙ\œÈ—Bˆ˜[YØÚXÚÜÚİÈHÚ][H›Üˆ][H[ˆÚXÚÜÚİÂˆYˆ][K™Ù]
+œ]X[]H‹ßJK™Ù]
+œİ]\ÈŠHOHœİXİ\˜[Wİ˜[YÙXÛ\™YØÚXÚÜÚİÜZ\œÈ‚ˆ[™][K™Ù]
+™XÛ\™YØÛÛ[[œÈŠHOHÈ•‘ÔÈ‹•Õ—Bˆ[™][K™Ù]
+™XÛ\™Yİ[š]ÈŠHOHÈ›H‹›\È—WBˆYˆ›İ˜[YØÚXÚÜÚİÎ‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ“›ÈİXİ\˜[H˜[YØ[YK]Ù[‘ÔËÕÕÚXÚÜÚİX›HÚ]XÛ\™YKÛ\È[š]Ëˆ‹›X\šÙ\œÈˆ×_BˆX›HH˜[YØÚXÚÜÚİÖÌBˆ\ÈHœ˜\Ø\œ˜^JÙ›Ø]
+›İÖÌJH›Üˆ›İÈ[ˆX›K™Ù]
+œ˜]×Ü™XÛÜ™È‹×JWK\OY›Ø]
+Bˆ[Y\ÈHœ˜\Ø\œ˜^JÙ›Ø]
+›İÖÌWJH›Üˆ›İÈ[ˆX›K™Ù]
+œ˜]×Ü™XÛÜ™È‹×JWK\OY›Ø]
+BˆÜ™\ˆHœ˜\™ÜÛÜ
+\ÊBˆ\Ë[Y\ÈH\ÖÛÜ™\—K[Y\ÖÛÜ™\—BˆYˆ[Š\ÊHˆÜˆ›İœš\Ùš[š]J\ÊK˜[
 
-def _well_key(identifier):
-    """Normalize case only; preserve meaningful source identifier digits."""
-    text = str(identifier or "").strip().casefold()
-    match = re.match(r"^(well[-_ ]?\d+)", text)
-    return match.group(1).replace("_", "-").replace(" ", "-") if match else ""
+HÜˆ›İœš\Ùš[š]J[Y\ÊK˜[
 
+HÜˆœ˜[Jœ™Y™Š\ÊHH
+N‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆÚXÚÜÚİ\İ\Ü\È›İš[š]H[™İšXİH[˜Ü™X\Ú[™ÈY\ˆÛÜ[™Ëˆ‹›X\šÙ\œÈˆ×_BˆYˆ\×İ™Ü×ÛY]™\Ê][JN‚ˆÛÛ[[œÈH][K™Ù]
+™XÛ\™YØÛÛ[[œÈ‹×JBˆ[š]ÈH][K™Ù]
+™XÛ\™Yİ[š]È‹×JBˆYˆ][K™Ù]
+˜[XšYİ[İ\×Ü›İÜÈ‹
+HÜˆ•‘ÔÈˆ›İ[ˆÛÛ[[œÎ‚ˆ™]\›ˆ˜[ÙBˆ[™^HÛÛ[[œËš[™^
+•‘ÔÈŠBˆ™]\›ˆ[Š[š]ÊHˆ[™^[™[š]ÖÚ[™^HOH›H‚‚ˆX\šÙ\—İX›HH™^
 
-def _new_group():
-    return {"source_identifiers": [], "workbook_records": [], "logs": [], "tables": [],
-            "spatial_association_available": False, "depth_time_association_available": False,
-            "identity_rule": "case-insensitive source well ID; filename grouping is source-level only"}
+][H›Üˆ][H[ˆX\šÙ\œÈYˆ\×İ™Ü×ÛY]™\Ê][JJK›Û™JBˆYˆX\šÙ\—İX›H\È›Û™N‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ“›È[˜[XšYİ[İ\ÈX\šÙ\ˆX›HÚ]Ûİ\˜ÙKYXÛ\™Y‘ÔÈ[ˆY]™\ÎÈQĞˆ˜[Y\È\™H›İİXœİ]]Yˆ‹›X\šÙ\œÈˆ×_BˆÛÛ[[œÈHX\šÙ\—İX›VÈ™XÛ\™YØÛÛ[[œÈ—Bˆ˜[YWÚ[™^H™^
 
+H›ÜˆK˜[YH[ˆ[[Y\˜]JÛÛ[[œÊHYˆ˜[YK\\Š
+H[ˆÈ“SQH‹“PT’ÑTˆŸJK›Û™JBˆ\Ú[™^HÛÛ[[œËš[™^
+•‘ÔÈŠBˆYˆ˜[YWÚ[™^\È›Û™N‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ“X\šÙ\ˆX›H\È›ÈXÛ\™YX\šÙ\‹[˜[YHÛÛ[[‹ˆ‹›X\šÙ\œÈˆ×_Bˆİ]]H×Bˆ›Üˆ›İ×Û[X™\‹›İÈ[ˆ[[Y\˜]JX\šÙ\—İX›K™Ù]
+œ˜]×Ü™XÛÜ™È‹×JKİ\LJN‚ˆN‚ˆ\H›Ø]
+›İÖÙ\Ú[™^JBˆ^Ù\
+[™^\œ›Ü‹\Q\œ›Ü‹˜[YQ\œ›ÜŠN‚ˆÛÛ[YBˆYˆ›İœš\Ùš[š]J\
+HÜˆ\\ÖÌHÜˆ\ˆ\ÖËLWN‚ˆÛÛ[YBˆİ]]˜\[™
+È›X\šÙ\ˆˆİŠ›İÖÛ˜[YWÚ[™^JKœÛİ\˜ÙWÜ›İ×Ú[™^ˆ›İ×Û[X™\‹ˆ™Ü×ÛHˆ\š[\œÛ]YÜÛİ\˜ÙWØÚXÚÜÚİİİÛ\Èˆ›Ø]
+œš[\œ
+\\Ë[Y\ÊJKˆ›Y]Ùˆ›[™X\ˆ[\œÛ][ÛˆÚ][ˆ\ÈÙ[	ÜÈÛİ\˜ÙKYXÛ\™Y‘ÔËÕÕÚXÚÜÚİ˜[™ÙHŸJBˆ™]\›ˆÈœİ]\ÈˆœÛİ\˜ÙWÛX\šÙ\—İ×ØÚXÚÜÚİÚ[\œÛ][Û—ÛÛ›HˆYˆİ]][ÙH››×ÛX\šÙ\œ×İÚ][—ØÚXÚÜÚİØÛİ™\˜YÙH‹ˆ˜ÚXÚÜÚİÜÛİ\˜ÙHˆX›K™Ù]
+œÛİ\˜ÙHŠK›X\šÙ\—ÜÛİ\˜ÙHˆX\šÙ\—İX›K™Ù]
+œÛİ\˜ÙHŠKˆ˜ÚXÚÜÚİİ™Ü×Ü˜[™ÙWÛHˆÙ›Ø]
+\ÖÌJK›Ø]
+\ÖËLWJWKˆ˜ÚXÚÜÚİİİÜ˜[™ÙWÛ\ÈˆÙ›Ø]
+œ›Z[Š[Y\ÊJK›Ø]
+œ›X^
+[Y\ÊJWKˆ›X\šÙ\œÈˆİ]]ˆ›[Z]][Ûˆˆ“›İHÙZ\ÛZXÈYNˆÑQËVH[YHÛXZ[‹Ù][H[™Ù[]ËYÜšYÜ]X[\ÜÛØÚX][Ûˆ™[XZ[ˆ[œ™\ÛÛ™YˆŸB‚‚™YˆX\šÙ\—Ù]šX][Û—ØÛÜœ™[][ÛœÊÜ›İ\
+N‚ˆˆˆ“X\X\šÙ\ˆQĞˆÈÛİ\˜ÙK\İ\™^H‘Û›HÚ\™H›İ^\ÈXÛ\™HY]™\Ëˆˆˆ‚ˆ]šX][ÛœÈHÚ][H›Üˆ][H[ˆÜ›İ\™Ù]
+X›\È‹×JHYˆ][K™Ù]
+˜Ø]YÛÜHŠHOH™]šX][ÛœÈ‚ˆ[™][K™Ù]
+œ]X[]H‹ßJK™Ù]
+œİ]\È‹ˆŠKœİ\İÚ]
+™\Üİ\™^WÜİXİ\˜[Wİ˜[YŠBˆ[™][K™Ù]
+™XÛ\™YØÛÛ[[œÈŠHOHÈ“QĞˆ‹•‘‹’SÓ‹V’SH—Bˆ[™][K™Ù]
+™XÛ\™Yİ[š]È‹×JVÎŒ—HOHÈ›H‹›H—WBˆX\šÙ\œÈHÚ][H›Üˆ][H[ˆÜ›İ\™Ù]
+X›\È‹×JHYˆ][K™Ù]
+˜Ø]YÛÜHŠHOH›X\šÙ\œÈ‚ˆ[™][K™Ù]
+˜[XšYİ[İ\×Ü›İÜÈ‹
+HOH[™“QĞˆˆ[ˆ][K™Ù]
+™XÛ\™YØÛÛ[[œÈ‹×JBˆ[™[Š][K™Ù]
+™XÛ\™Yİ[š]È‹×JJHˆ][VÈ™XÛ\™YØÛÛ[[œÈ—Kš[™^
+“QĞˆŠBˆ[™][VÈ™XÛ\™Yİ[š]È—VÚ][VÈ™XÛ\™YØÛÛ[[œÈ—Kš[™^
+“QĞˆŠWHOH›H—BˆYˆ›İ]šX][ÛœÈÜˆ›İX\šÙ\œÎ‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ“›ÈØ[YK]Ù[Ûİ\˜ÙKYXÛ\™YY]™HQĞˆ]šX][Ûˆ[™[˜[XšYİ[İ\ÈY]™HQĞˆX\šÙ\ˆZ\‹ˆ‹›X\šÙ\œÈˆ×_Bˆ]šX][ÛˆH]šX][ÛœÖÌBˆYÚK™ÚHH]šX][Û–È™XÛ\™YØÛÛ[[œÈ—Kš[™^
+“QĞˆŠK]šX][Û–È™XÛ\™YØÛÛ[[œÈ—Kš[™^
+•‘ŠBˆ˜[Y\ÈHœ˜\Ø\œ˜^JÖÙ›Ø]
+›İÖÛYÚWJK›Ø]
+›İÖİ™ÚWJWH›Üˆ›İÈ[ˆ]šX][Û‹™Ù]
+œ˜]×Ü™XÛÜ™È‹×JWK\OY›Ø]
+BˆÜ™\ˆHœ˜\™ÜÛÜ
+˜[Y\ÖÎ‹JBˆ˜[Y\ÈH˜[Y\ÖÛÜ™\—BˆYˆ[Š˜[Y\ÊHˆÜˆ›İœš\Ùš[š]J˜[Y\ÊK˜[
 
-def _table_numeric_qc(category, table):
-    """Check declared table structure; this is not a seismic tie or interpretation."""
-    expected = {"checkshots": ("TVDSS", "TWT"),
-                "deviations": ("MDKB", "TVD", "INCL", "AZIM")}.get(category)
-    result = {"status": "source_records_only", "numeric_rows": 0}
-    if table.row_width_mismatch_count:
-        return {**result, "status": "unresolved_variable_width_rows",
-                "reason": "row widths differ; original fields are preserved without positional repair"}
-    if expected is None:
-        return result
-    if tuple(str(x).upper() for x in table.declared_columns) != expected:
-        return {**result, "status": "declared_columns_unexpected",
-                "reason": "source-declared columns differ from expected fields"}
-    try:
-        values = np.asarray([[float(value) for value in row[:len(expected)]] for row in table.rows], dtype=float)
-    except (TypeError, ValueError):
-        return {**result, "status": "non_numeric_or_missing_source_values",
-                "reason": "a declared numeric source field is missing or non-numeric"}
-    if values.ndim != 2 or values.shape[0] == 0 or not np.isfinite(values).all():
-        return {**result, "status": "non_finite_source_values", "numeric_rows": int(values.shape[0]) if values.ndim == 2 else 0}
-    units = tuple((value or "").strip().casefold() for value in table.declared_units)
-    if category == "checkshots":
-        depth_monotonic = bool(np.all(np.diff(values[:, 0]) >= 0))
-        time_monotonic = bool(np.all(np.diff(values[:, 1]) > 0))
-        units_valid = units == ("m", "ms")
-        return {"status": "structurally_valid_declared_checkshot_pairs" if units_valid and depth_monotonic and time_monotonic else "checkshot_qc_warning",
-                "numeric_rows": int(values.shape[0]), "declared_units": list(table.declared_units),
-                "depth_non_decreasing": depth_monotonic, "twt_strictly_increasing": time_monotonic,
-                "reason": "source pairs only; sample origin, datum relation, and physical 4D registration remain unverified"}
-    md_unit_valid = bool(units and units[0] == "m")
-    md_monotonic = bool(np.all(np.diff(values[:, 0]) > 0))
-    tvd_monotonic = bool(np.all(np.diff(values[:, 1]) >= 0))
-    return {"status": "depth_survey_structurally_valid_orientation_units_missing" if md_unit_valid and md_monotonic and tvd_monotonic else "deviation_qc_warning",
-            "numeric_rows": int(values.shape[0]), "declared_units": list(table.declared_units),
-            "md_increasing": md_monotonic, "tvd_non_decreasing": tvd_monotonic,
-            "reason": "inclination/azimuth units and reference are unavailable; no XY trajectory is computed"}
+HÜˆœ˜[Jœ™Y™Š˜[Y\ÖÎ‹JHH
+HÜˆœ˜[Jœ™Y™Š˜[Y\ÖÎ‹WJH
+N‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ‘]šX][ÛˆQĞ‹Õ‘Z\œÈ\™H›İš[š]H[™[Û›İÛšXËˆ‹›X\šÙ\œÈˆ×_BˆX\šÙ\—İX›HHX\šÙ\œÖÌBˆÛÛ[[œÈHX\šÙ\—İX›VÈ™XÛ\™YØÛÛ[[œÈ—Bˆ˜[YWÚHH™^
 
-
-def marker_checkshot_correlations(group):
-    """Interpolate marker TVDSS against the same well's declared checkshot pairs.
-
-    This is a source-table relationship only. It does not tie a well marker to
-    a SEG-Y sample, and it refuses extrapolation or positional row repair.
-    """
-    checkshots = [item for item in group.get("tables", []) if item.get("category") == "checkshots"]
-    markers = [item for item in group.get("tables", []) if item.get("category") == "markers"]
-    valid_checkshots = [item for item in checkshots
-        if item.get("quality", {}).get("status") == "structurally_valid_declared_checkshot_pairs"
-        and item.get("declared_columns") == ["TVDSS", "TWT"]
-        and item.get("declared_units") == ["m", "ms"]]
-    if not valid_checkshots:
-        return {"status": "unavailable", "reason": "No structurally valid same-well TVDSS/TWT checkshot table with declared m/ms units.", "markers": []}
-    table = valid_checkshots[0]
-    depths = np.asarray([float(row[0]) for row in table.get("raw_records", [])], dtype=float)
-    times = np.asarray([float(row[1]) for row in table.get("raw_records", [])], dtype=float)
-    order = np.argsort(depths)
-    depths, times = depths[order], times[order]
-    if len(depths) < 2 or not np.isfinite(depths).all() or not np.isfinite(times).all() or np.any(np.diff(depths) <= 0):
-        return {"status": "unavailable", "reason": "Checkshot depth support is not finite and strictly increasing after sorting.", "markers": []}
-    def has_tvdss_metres(item):
-        columns = item.get("declared_columns", [])
-        units = item.get("declared_units", [])
-        if item.get("ambiguous_rows", 0) or "TVDSS" not in columns:
-            return False
-        index = columns.index("TVDSS")
-        return len(units) > index and units[index] == "m"
-
-    marker_table = next((item for item in markers if has_tvdss_metres(item)), None)
-    if marker_table is None:
-        return {"status": "unavailable", "reason": "No unambiguous marker table with source-declared TVDSS in metres; MDKB values are not substituted.", "markers": []}
-    columns = marker_table["declared_columns"]
-    name_index = next((i for i, name in enumerate(columns) if name.upper() in {"NAME", "MARKER"}), None)
-    depth_index = columns.index("TVDSS")
-    if name_index is None:
-        return {"status": "unavailable", "reason": "Marker table has no declared marker-name column.", "markers": []}
-    output = []
-    for row_number, row in enumerate(marker_table.get("raw_records", []), start=1):
-        try:
-            depth = float(row[depth_index])
-        except (IndexError, TypeError, ValueError):
-            continue
-        if not np.isfinite(depth) or depth < depths[0] or depth > depths[-1]:
-            continue
-        output.append({"marker": str(row[name_index]), "source_row_index": row_number,
-            "tvdss_m": depth, "interpolated_source_checkshot_twt_ms": float(np.interp(depth, depths, times)),
-            "method": "linear interpolation within this well's source-declared TVDSS/TWT checkshot range"})
-    return {"status": "source_marker_to_checkshot_interpolation_only" if output else "no_markers_within_checkshot_coverage",
-        "checkshot_source": table.get("source"), "marker_source": marker_table.get("source"),
-        "checkshot_tvdss_range_m": [float(depths[0]), float(depths[-1])],
-        "checkshot_twt_range_ms": [float(np.min(times)), float(np.max(times))],
-        "markers": output,
-        "limitation": "Not a seismic tie: SEG-Y time domain/datum and well-to-grid spatial association remain unresolved."}
-
-
-def marker_deviation_correlations(group):
-    """Map marker MDKB to source-survey TVD only where both axes declare metres."""
-    deviations = [item for item in group.get("tables", []) if item.get("category") == "deviations"
-        and item.get("quality", {}).get("status", "").startswith("depth_survey_structurally_valid")
-        and item.get("declared_columns") == ["MDKB", "TVD", "INCL", "AZIM"]
-        and item.get("declared_units", [])[:2] == ["m", "m"]]
-    markers = [item for item in group.get("tables", []) if item.get("category") == "markers"
-        and item.get("ambiguous_rows", 0) == 0 and "MDKB" in item.get("declared_columns", [])
-        and len(item.get("declared_units", [])) > item["declared_columns"].index("MDKB")
-        and item["declared_units"][item["declared_columns"].index("MDKB")] == "m"]
-    if not deviations or not markers:
-        return {"status": "unavailable", "reason": "No same-well, source-declared metre MDKB deviation and unambiguous metre MDKB marker pair.", "markers": []}
-    deviation = deviations[0]
-    md_i, tvd_i = deviation["declared_columns"].index("MDKB"), deviation["declared_columns"].index("TVD")
-    values = np.asarray([[float(row[md_i]), float(row[tvd_i])] for row in deviation.get("raw_records", [])], dtype=float)
-    order = np.argsort(values[:, 0])
-    values = values[order]
-    if len(values) < 2 or not np.isfinite(values).all() or np.any(np.diff(values[:, 0]) <= 0) or np.any(np.diff(values[:, 1]) < 0):
-        return {"status": "unavailable", "reason": "Deviation MDKB/TVD pairs are not finite and monotonic.", "markers": []}
-    marker_table = markers[0]
-    columns = marker_table["declared_columns"]
-    name_i = next((i for i, name in enumerate(columns) if name.upper() in {"NAME", "MARKER"}), None)
-    md_marker_i = columns.index("MDKB")
-    if name_i is None:
-        return {"status": "unavailable", "reason": "Marker table has no marker name column.", "markers": []}
-    mapped = []
-    for row_number, row in enumerate(marker_table.get("raw_records", []), start=1):
-        try:
-            md = float(row[md_marker_i])
-        except (IndexError, TypeError, ValueError):
-            continue
-        if np.isfinite(md) and values[0, 0] <= md <= values[-1, 0]:
-            mapped.append({"marker": str(row[name_i]), "source_row_index": row_number,
-                "mdkb_m": md, "interpolated_source_deviation_tvd_m": float(np.interp(md, values[:, 0], values[:, 1])),
-                "method": "linear interpolation within source MDKB/TVD deviation coverage"})
-    return {"status": "source_marker_to_deviation_interpolation_only" if mapped else "no_markers_within_deviation_coverage",
-        "deviation_source": deviation.get("source"), "marker_source": marker_table.get("source"),
-        "deviation_mdkb_range_m": [float(values[0, 0]), float(values[-1, 0])],
-        "markers": mapped,
-        "limitation": "TVD reference is not reconciled to checkshot TVDSS; this does not establish TWT or seismic-grid position."}
-
-
-def build_well_evidence_matrix(report):
-    """Summarize actual source evidence for each well without assigning ties."""
-    family_rules = {
-        "gamma_ray": {"GR", "GR_P", "GAMMA", "CGR"},
-        "resistivity": {"RT", "RT_P", "RXO", "RXO_P", "ILD", "LLD"},
-        "sonic": {"DTC", "DTC_P", "DTCOM", "DTS", "DTS_P"},
-        "density": {"DEN", "DENS_P", "DENB", "RHOB"},
-        "neutron": {"NEUT_P", "NPHI", "PHIN"},
-        "porosity_interpreted": {"PHIE", "PHIT"},
-        "permeability_interpreted": {"PERM", "PERMH", "PERM_TRFM"},
-        "saturation_or_volume_interpreted": {"SWE", "SWT", "VOIL", "VGAS", "VWATER"},
-    }
-    matrix = []
-    for well_id, group in sorted(report.get("by_well", {}).items()):
-        workbook = group.get("workbook_records", [])
-        coordinate = workbook[0].get("coordinate_evidence", {}) if workbook else {}
-        curves = {}
-        log_summary = []
-        for log in group.get("logs", []):
-            log_summary.append({"source": log.get("source"), "provenance": log.get("provenance"),
-                "samples": log.get("samples"), "depth_axis": log.get("depth_mnemonic"),
-                "depth_unit": log.get("depth_unit"), "depth_range": [log.get("depth_start"), log.get("depth_stop")]})
-            for curve in log.get("curves", []):
-                mnemonic = curve.get("mnemonic", "").upper().split(":")[0]
-                for family, names in family_rules.items():
-                    if mnemonic in names:
-                        curves.setdefault(family, set()).add(mnemonic)
-        tables = group.get("tables", [])
-        category = {name: [item for item in tables if item.get("category") == name] for name in ("markers", "checkshots", "deviations")}
-        marker_records = []
-        for item in category["markers"]:
-            columns = item.get("declared_columns", [])
-            name_index = next((i for i, value in enumerate(columns) if value.upper() in {"NAME", "MARKER"}), None)
-            depth_columns = [name for name in ("MDKB", "TVDSS", "TVD") if name in columns]
-            names = [str(row[name_index]) for row in item.get("raw_records", []) if name_index is not None and name_index < len(row)]
-            marker_records.append({"source": item.get("source"), "count": item.get("records"),
-                "declared_depth_columns": depth_columns, "names": names,
-                "quality": item.get("quality", {}).get("status"),
-                "twt_association": "checkshot_interpolated only when a same-well TVDSS value and valid checkshot support exist"})
-        checkshot_records = [{"source": item.get("source"), "count": item.get("records"),
-            "units": item.get("declared_units"), "quality": item.get("quality", {}).get("status")} for item in category["checkshots"]]
-        deviation_records = [{"source": item.get("source"), "count": item.get("records"),
-            "units": item.get("declared_units"), "quality": item.get("quality", {}).get("status")} for item in category["deviations"]]
-        matrix.append({"well_id": well_id,
-            "workbook_xy": [coordinate.get("x"), coordinate.get("y")] if coordinate else None,
-            "xy_reference": "units, CRS, and datum not declared; not compared to SEG-Y trace coordinates",
-            "las_sources": log_summary,
-            "curve_families": {key: sorted(value) for key, value in curves.items()},
-            "markers": marker_records, "checkshots": checkshot_records, "deviations": deviation_records,
-            "marker_checkshot_relationship": marker_checkshot_correlations(group),
-            "marker_deviation_relationship": marker_deviation_correlations(group),
-            "seismic_association": "unverified"})
-    return matrix
-
-
-def well_evidence_summary(root):
-    """Read source well evidence, group it by source ID, and retain association gates.
-
-    Workbook coordinates, LAS curves and text-table records remain source context.
-    They do not become a finding-to-well relationship unless independent CRS,
-    datum, trajectory and seismic sample ties are available.
-    """
-    root = Path(root)
-    well_root = root / "well_data"
-    source_identity = [{"path": str(p.relative_to(root)), "size": p.stat().st_size,
-                        "mtime_ns": p.stat().st_mtime_ns}
-                       for p in sorted(well_root.rglob("*")) if p.is_file()]
-    report = {
-        "source_identity": source_identity,
-        "association_available": False,
-        "missing_association_evidence": [
-            "well X/Y units, CRS, and datum",
-            "authoritative SEG-Y coordinate CRS and header-to-map transform",
-            "well trajectory orientation reference and units",
-            "verified well datum and depth reference",
-            "verified seismic sample origin and domain",
-            "reviewed well-to-seismic time-depth tie",
-        ],
-        "evidence_classification": {
-            "workbook": "source metadata; X/Y coordinate references unresolved",
-            "standard_las": "source log curves; raw-versus-processed status not independently established",
-            "composite_interpreted_las": "composite/interpreted source curves",
-            "derived_curve_names": sorted(_DERIVED_CURVE_NAMES),
-            "checkshots": "source-declared depth/time pairs; not tied to seismic samples",
-            "deviations": "source-declared depth/inclination/azimuth records; no XY trajectory derived",
-            "markers": "interpreted source markers; seismic horizon association unverified",
-        },
-        "logs": [], "tables": [], "well_count": 0, "errors": [], "records": [], "by_well": {},
-    }
-    workbook = well_root / "Challenge3_WellList_Information.xlsx"
-    if workbook.exists():
-        try:
-            records = load_well_information(workbook, column_mapping={"well_id": "Well Name"},
-                                            header_row=3, max_column=13)
-            report["well_count"] = len(records)
-            for item in records:
-                values = item["source_values"]
-                record = {"well_id": item["well_id"], "source": workbook.name,
-                    "source_row": item["source_row"], "source_sheet": item["source_sheet"],
-                    "source_header_row": item["source_header_row"],
-                    "declared_values": {k: str(v) if v is not None else None for k, v in values.items()},
-                    "coordinate_evidence": {"x": values.get("X"), "y": values.get("Y"),
-                        "units": None, "crs": None, "datum": None,
-                        "status": "source X/Y present; coordinate units, CRS, and datum unavailable"}}
-                report["records"].append(record)
-                key = _well_key(item["well_id"]) or f"unassigned:workbook:{item['source_row']}"
-                group = report["by_well"].setdefault(key, _new_group())
-                group["source_identifiers"].append(item["well_id"])
-                group["workbook_records"].append(record)
-        except (ImportError, ValueError, OSError, RuntimeError) as exc:
-            report["errors"].append({"source": workbook.name, "type": type(exc).__name__})
-
-    for path in sorted((well_root / "las").glob("*.las")):
-        try:
-            las = inspect_las(path)
-            curves = []
-            for curve in las["curves"]:
-                values = np.asarray(las["data"].get(curve["mnemonic"], ()), dtype=float)
-                finite = values[np.isfinite(values)]
-                derived = curve["mnemonic"].upper().split(":")[0] in _DERIVED_CURVE_NAMES
-                low = float(finite.min()) if finite.size else None
-                high = float(finite.max()) if finite.size else None
-                unit = str(curve.get("unit") or "").strip().casefold().replace(" ", "")
-                quality_flags = []
-                if unit in {"frac", "fraction", "v/v", "vv"} and finite.size and (low < 0 or high > 1):
-                    quality_flags.append("declared_fraction_outside_0_to_1_review_scaling_or_sentinels")
-                if derived and finite.size and max(abs(low), abs(high)) >= 100:
-                    quality_flags.append("extreme_finite_interpreted_value_review_source_encoding_or_sentinels")
-                curves.append({**{key: curve[key] for key in ("mnemonic", "unit", "description", "sample_count", "null_count")},
-                    "finite_count": int(finite.size),
-                    "finite_min": low,
-                    "finite_median": float(np.median(finite)) if finite.size else None,
-                    "finite_max": high,
-                    "value_quality_flags": quality_flags,
-                    "evidence_kind": "derived_or_interpreted_petrophysical_curve" if derived else "source_log_response_semantics_unverified",
-                    "raw_measurement_status": "not established from mnemonic alone"})
-            log = {"source": path.name, "provenance": las["provenance"], "well_id": las["well_id"],
-                "samples": las["sample_count"], "depth_mnemonic": las["depth_mnemonic"],
-                "depth_unit": las["depth_unit"], "depth_start": las["depth_start"],
-                "depth_stop": las["depth_stop"],
-                "depth_reference_status": "LAS axis unit is source-declared; MD/TVD/datum relation unresolved",
-                "curves": curves,
-                "note": "Petrophysical property curves are static source context, not temporal fluid-change observations."}
-            report["logs"].append(log)
-            key = _well_key(las["well_id"]) or f"unassigned:las:{path.name}"
-            group = report["by_well"].setdefault(key, _new_group())
-            group["source_identifiers"].append(las["well_id"])
-            group["logs"].append(log)
-        except (ImportError, ValueError, OSError, RuntimeError) as exc:
-            report["errors"].append({"source": path.name, "type": type(exc).__name__})
-
-    for path in sorted(well_root.glob("*/*.txt")):
-        try:
-            table = read_well_table(path)
-            match = re.match(r"(?i)^(well[-_ ]?\d+)", path.stem)
-            file_well = match.group(1).replace("_", "-").replace(" ", "-") if match else None
-            item = {"category": path.parent.name, "source": path.name, "well_id_from_filename": file_well,
-                "well_key": _well_key(file_well), "records": len(table.rows),
-                "declared_columns": list(table.declared_columns), "columns": list(table.columns),
-                "declared_units": list(table.declared_units), "units": list(table.units),
-                "ambiguous_rows": table.row_width_mismatch_count, "header_origin": table.header_origin,
-                "source_line_numbers": list(table.source_line_numbers),
-                "raw_records": [list(row) for row in table.rows],
-                "raw_data_lines": list(table.raw_data_lines),
-                "quality": _table_numeric_qc(path.parent.name, table),
-                "evidence_kind": ("declared_checkshot_pairs" if path.parent.name == "checkshots" else
-                    "source_deviation_survey" if path.parent.name == "deviations" else "interpreted_formation_markers"),
-                "association_scope": "filename groups source records by well only; no seismic position or horizon tie"}
-            report["tables"].append(item)
-            key = item["well_key"] or f"unassigned:table:{path.name}"
-            group = report["by_well"].setdefault(key, _new_group())
-            group["source_identifiers"].append(file_well)
-            group["tables"].append(item)
-        except (OSError, UnicodeError, ValueError) as exc:
-            report["errors"].append({"source": path.name, "type": type(exc).__name__})
-
-    report["association_assessment"] = {
-        "status": "unavailable", "spatial_well_to_seismic": False,
-        "vertical_well_to_sample": False,
-        "grouped_source_well_count": sum(bool(v["workbook_records"] or v["logs"] or v["tables"])
-                                          for v in report["by_well"].values()),
-        "reason": "workbook X/Y lacks declared units/CRS/datum; SEG-Y map CRS and sample origin unresolved; deviation orientation reference incomplete",
-        "well_data_role": "contextual log, marker, checkshot, and deviation evidence; no finding-specific association",
-    }
-    report["well_evidence_matrix"] = build_well_evidence_matrix(report)
-    return report
+H›ÜˆK˜[YH[ˆ[[Y\˜]JÛÛ[[œÊHYˆ˜[YK\\Š
+H[ˆÈ“SQH‹“PT’ÑTˆŸJK›Û™JBˆYÛX\šÙ\—ÚHHÛÛ[[œËš[™^
+“QĞˆŠBˆYˆ˜[YWÚH\È›Û™N‚ˆ™]\›ˆÈœİ]\Èˆ[˜]˜Z[X›H‹œ™X\ÛÛˆˆ“X\šÙ\ˆX›H\È›ÈX\šÙ\ˆ˜[YHÛÛ[[‹ˆ‹›X\šÙ\œÈˆ×_BˆX\YH×Bˆ›Üˆ›İ×Û[X™\‹›İÈ[ˆ[[Y\˜]JX\šÙ\—İX›K™Ù]
+œ˜]×Ü™XÛÜ™È‹×JKİ\LJN‚ˆN‚ˆYH›Ø]
+›İÖÛYÛX\šÙ\—ÚWJBˆ^Ù\
+[™^\œ›Ü‹\Q\œ›Ü‹˜[YQ\œ›ÜŠN‚ˆÛÛ[YBˆYˆœš\Ùš[š]JY
+H[™˜[Y\ÖÌHHYH˜[Y\ÖËLKN‚ˆX\Y˜\[™
+È›X\šÙ\ˆˆİŠ›İÖÛ˜[YWÚWJKœÛİ\˜ÙWÜ›İ×Ú[™^ˆ›İ×Û[X™\‹ˆ›YØ—ÛHˆYš[\œÛ]YÜÛİ\˜ÙWÙ]šX][Û—İ™ÛHˆ›Ø]
+œš[\œ
+Y˜[Y\ÖÎ‹K˜[Y\ÖÎ‹WJJKˆ›Y]Ùˆ›[™X\ˆ[\œÛ][ÛˆÚ][ˆÛİ\˜ÙHQĞ‹Õ‘]šX][ÛˆÛİ™\˜YÙHŸJBˆ™]\›ˆÈœİ]\ÈˆœÛİ\˜ÙWÛX\šÙ\—İ×Ù]šX][Û—Ú[\œÛ][Û—ÛÛ›HˆYˆX\Y[ÙH››×ÛX\šÙ\œ×İÚ][—Ù]šX][Û—ØÛİ™\˜YÙH‹ˆ™]šX][Û—ÜÛİ\˜ÙHˆ]šX][Û‹™Ù]
+œÛİ\˜ÙHŠK›X\šÙ\—ÜÛİ\˜ÙHˆX\šÙ\—İX›K™Ù]
+œÛİ\˜ÙHŠKˆ™]šX][Û—ÛYØ—Ü˜[™ÙWÛHˆÙ›Ø]
+˜[Y\ÖÌJK›Ø]
+˜[Y\ÖËLKJWKˆ›X\šÙ\œÈˆX\Yˆ›[Z]][Ûˆˆ•‘™Y™\™[˜ÙH\È›İ™XÛÛ˜Ú[YÈÚXÚÜÚİ‘ÔÎÈ\ÈÙ\È›İ\İX›\ÚÕÜˆÙZ\ÛZXËYÜšYÜÚ][Û‹ˆŸB‚‚™YˆZ[İÙ[Ù]šY[˜ÙWÛX]š^
+™\Ü
+N‚ˆˆˆ”İ[[X\š^™HXİX[Ûİ\˜ÙH]šY[˜ÙH›ÜˆXXÚÙ[Ú]İ]\ÜÚYÛš[™ÈY\Ëˆˆˆ‚ˆ˜[Z[WÜ[\ÈHÂˆ™Ø[[XWÜ˜^HˆÈ‘Ôˆ‹‘Ô—Ô‹‘ĞSSPH‹ÑÔˆŸKˆœ™\Ú\İ]š]HˆÈ”•‹”•Ô‹”–È‹”–×Ô‹’S‹“ŸKˆœÛÛšXÈˆÈ‘È‹‘×Ô‹‘ÓÓH‹‘È‹‘×ÔŸKˆ™[œÚ]HˆÈ‘Sˆ‹‘S”×Ô‹‘Sˆ‹”’ĞˆŸKˆ›™]]›ÛˆˆÈ“‘UUÔ‹“”H‹”SˆŸKˆœÜ›ÜÚ]WÚ[\œ™]YˆÈ”QH‹”UŸKˆœ\›YXXš[]WÚ[\œ™]YˆÈ”T“H‹”T“R‹”T“WÕ‘“HŸKˆœØ]\˜][Û—ÛÜ—İ›Û[YWÚ[\œ™]YˆÈ”ÕÑH‹”ÕÕ‹•“ÒS‹•‘ĞTÈ‹••ĞUTˆŸKˆBˆX]š^H×Bˆ›ÜˆÙ[ÚYÜ›İ\[ˆÛÜY
+™\Ü™Ù]
+˜WİÙ[‹ßJKš][\Ê
+JN‚ˆÛÜšØ›ÛÚÈHÜ›İ\™Ù]
+ÛÜšØ›ÛÚ×Ü™XÛÜ™È‹×JBˆÛÛÜ™[˜]HHÛÜšØ›ÛÚÖÌK™Ù]
+˜ÛÛÜ™[˜]WÙ]šY[˜ÙH‹ßJHYˆÛÜšØ›ÛÚÈ[ÙHßBˆİ\™\ÈHßBˆÙ×Üİ[[X\HH×Bˆ›ÜˆÙÈ[ˆÜ›İ\™Ù]
+›ÙÜÈ‹×JN‚ˆÙ×Üİ[[X\K˜\[™
+ÈœÛİ\˜ÙHˆÙË™Ù]
+œÛİ\˜ÙHŠKœ›İ™[˜[˜ÙHˆÙË™Ù]
+œ›İ™[˜[˜ÙHŠKˆœØ[\\ÈˆÙË™Ù]
+œØ[\\ÈŠK™\Ø^\ÈˆÙË™Ù]
+™\Û[™[[ÛšXÈŠKˆ™\İ[š]ˆÙË™Ù]
+™\İ[š]ŠK™\Ü˜[™ÙHˆÛÙË™Ù]
+™\Üİ\ŠKÙË™Ù]
+™\ÜİÜŠW_JBˆ›Üˆİ\™H[ˆÙË™Ù]
+˜İ\™\È‹×JN‚ˆ[™[[ÛšXÈHİ\™K™Ù]
+›[™[[ÛšXÈ‹ˆŠK\\Š
+KœÜ]
+ˆŠVÌBˆ›Üˆ˜[Z[K˜[Y\È[ˆ˜[Z[WÜ[×y¶‰ËkºwµçP¢7W'fW2Ò¶—FVÕ²&ÖæVÖöæ–2%ÒçWW"‚“¢—FVÒf÷"—FVÒ–âÆöu²&7W'fW2%×Ğ¢6öæ–5öæÖRÒæW‡B‚†æÖRf÷"æÖR–â‚$ED5õ"Â$ED4ôÒ"Â$ED2"’–bæÖR–â7W'fW2’ÂæöæR¢FVç6—G•öæÖRÒæW‡B‚†æÖRf÷"æÖR–â‚$DTå5õ"Â$DTä""Â%$„ô""Â$DTâ"’–bæÖR–â7W'fW2’ÂæöæR¢–bæ÷B6öæ–5öæÖR÷"æ÷BFVç6—G•öæÖS ¢6öçF–çVP¢6öæ–5÷Væ—BÒ7G"†7W'fW5·6öæ–5öæÖUÒævWB‚'Væ—B"Â""’’ç7G&—‚’æ66VföÆB‚’ç&WÆ6R‚""Â""¢FVç6—G•÷Væ—BÒ7G"†7W'fW5¶FVç6—G•öæÖUÒævWB‚'Væ—B"Â""’’ç7G&—‚’æ66VföÆB‚’ç&WÆ6R‚""Â""¢–b6öæ–5÷Væ—Bæ÷B–â²'W2ögB"Â,+W2ögB"Â'W2öb'Ò÷"FVç6—G•÷Væ—Bæ÷B–â²&rö6Ó2"Â&rö62"Â&rö32'Ó ¢7VÖÖ'’çWFFR‡²'7FGW2#¢'Vç7W÷'FVEö÷%öÖ&–wV÷W5ö7W'fU÷Væ—G2"Â'6÷W&6R#¢F‚ææÖRÀ¢'6öæ–5ö7W'fR#¢6öæ–5öæÖRÂ&FVç6—G•ö7W'fR#¢FVç6—G•öæÖRÀ¢'6öæ–5÷Væ—B#¢7W'fW5·6öæ–5öæÖUÒævWB‚'Væ—B"’À¢&FVç6—G•÷Væ—B#¢7W'fW5¶FVç6—G•öæÖUÒævWB‚'Væ—B"—Ò¢6öçF–çVP¢FWF…öæÖRÒÆörævWB‚&FWF…öÖæVÖöæ–2"¢FWF‚Òçæ6'&’†Æöu²&FF%Õ¶FWF…öæÖUÒÂGG—SÖçæfÆöCcB¢6öæ–2Òçæ6'&’†Æöu²&FF%Õ·6öæ–5öæÖUÒÂGG—SÖçæfÆöCcB¢FVç6—G’Òçæ6'&’†Æöu²&FF%Õ¶FVç6—G•öæÖUÒÂGG—SÖçæfÆöCcB¢–bæ÷B†FWF‚ç6—¦RÓÒ6öæ–2ç6—¦RÓÒFVç6—G’ç6—¦R“ ¢7VÖÖ'’çWFFR‡²'7FGW2#¢&7W'fUöÆVæwF…öÖ—6ÖF6‚"Â'6÷W&6R#¢F‚ææÖWÒ¢6öçF–çVP¢fÆ–EöFWF‚Â–×VFæ6RÒ6ö×WFUö6÷W7F–5ö–×VFæ6Uö×&–Â€¢FWF‚Â6öæ–2ÂFVç6—G’Â6öæ–5÷Væ—C×6öæ–5÷Væ—BÂFVç6—G•÷Væ—CÖFVç6—G•÷Væ—B¢–bæ÷B–×VFæ6Rç6—¦S ¢7VÖÖ'’çWFFR‡²'7FGW2#¢&æõ÷fÆ–Eö7W'fU÷—'2"Â'6÷W&6R#¢F‚ææÖWÒ¢6öçF–çVP¢7VÖÖ'’Ò²'vVÆÅö–B#¢b%vVÆÂ×·vVÆÇÒ"Â'7FGW2#¢&6ö×WFVEög&öÕ÷Væ—BÖ6ö×F–&ÆUö7W'fW2"À¢'6÷W&6R#¢F‚ææÖRÂ'6öæ–5ö7W'fR#¢6öæ–5öæÖRÂ'6öæ–5÷Væ—B#¢7W'fW5·6öæ–5öæÖUÒævWB‚'Væ—B"’À¢&FVç6—G•ö7W'fR#¢FVç6—G•öæÖRÂ&FVç6—G•÷Væ—B#¢7W'fW5¶FVç6—G•öæÖUÒævWB‚'Væ—B"’À¢&FWF…öÖæVÖöæ–2#¢FWF…öæÖRÂ&FWF…÷Væ—B#¢ÆörævWB‚&FWF…÷Væ—B"’À¢'fÆ–E÷6×ÆW2#¢–çB†–×VFæ6Rç6—¦R’Â'F÷FÅ÷6×ÆW2#¢–çB†FWF‚ç6—¦R’À¢'fÆ–Eög&7F–öâ#¢fÆöB†–×VFæ6Rç6—¦RòFWF‚ç6—¦R’À¢'fÆ–EöFWF…÷&ævR#¢¶fÆöB‡fÆ–EöFWF‚æÖ–â‚’’ÂfÆöB‡fÆ–EöFWF‚æÖ‚‚’•ÒÀ¢&6÷W7F–5ö–×VFæ6Uö×&–Â#¢²&ÖVF–â#¢fÆöB†çæÖVF–â†–×VFæ6R’’À¢'#¢fÆöB†ççW&6VçF–ÆR†–×VFæ6RÂ’’Â'“#¢fÆöB†ççW&6VçF–ÆR†–×VFæ6RÂ“’—ÒÀ¢&ÖWF†öB#¢$’ÒFVç6—G’†rö6Ó2’9r3Bã‚ò6ö×&W76–öæÂ6Æ÷væW72‡W2ögB’Â&W÷'FVB–âÕ&–Â"À¢&Æ–Ö—FF–öç2#¢$–çWB7W'fW2Ö’&R&ö6W76VBö–çFW'&WFVBâFWF‚FGVÒæB6V—6Ö–2F–R&RVçfW&–f–VC²fÇVW2Fòæ÷B–FVçF–g’fÇV–BG—R÷"&öGV7F–öâ6†ævRâ'Ğ¢'&V°¢–b7VÖÖ'•²'7FGW2%ÒÓÒ'Væf–Æ&ÆR# ¢7VÖÖ'•²'&V6öâ%ÒÒ$æò6ÖRÖf–ÆR6ö×&W76–öæÂ6öæ–2æBFVç6—G’7W'fW2v—F‚6ö×F–&ÆRFV6Æ&VBVæ—G3²Fòæ÷B7–çF†W6—¦RÖ—76–ærÆöw2â ¢&W7VÇBæVæB‡7VÖÖ'’¢&WGW&â&W7VÇ@  ¦FVbvVÆÅöWf–FVæ6U÷7VÖÖ'’‡&ö÷B“ ¢""%&VB6÷W&6RvVÆÂWf–FVæ6RÂw&÷W—B'’6÷W&6R”BÂæB&WF–â76ö6–F–öâvFW2à ¢v÷&¶&öö²6ö÷&F–æFW2ÂÄ27W'fW2æBFW‡B×F&ÆR&V6÷&G2&VÖ–â6÷W&6R6öçFW‡Bà¢F†W’Fòæ÷B&V6öÖRf–æF–ær×Fò×vVÆÂ&VÆF–öç6†—VæÆW72–æFWVæFVçB5%2À¢FGVÒÂG&¦V7F÷'’æB6V—6Ö–26×ÆRF–W2&Rf–Æ&ÆRà¢"" ¢&ö÷BÒF‚‡&ö÷B¢vVÆÅ÷&ö÷BÒ&ö÷Bò'vVÆÅöFF ¢6÷W&6Uö–FVçF—G’Ò·²'F‚#¢7G"‡ç&VÆF—fU÷Fò‡&ö÷B’’Â'6—¦R#¢ç7FB‚’ç7E÷6—¦RÀ¢&×F–ÖUöç2#¢ç7FB‚’ç7Eö×F–ÖUöç7Ğ¢f÷"–â6÷'FVB‡vVÆÅ÷&ö÷Bç&vÆö"‚"¢"’’–bæ—5öf–ÆR‚•Ğ¢&W÷'BÒ°¢'6÷W&6Uö–FVçF—G’#¢6÷W&6Uö–FVçF—G’À¢&76ö6–F–öåöf–Æ&ÆR#¢fÇ6RÀ¢&Ö—76–æuö76ö6–F–öåöWf–FVæ6R#¢°¢'vVÆÂ‚õ’Væ—G2Â5%2ÂæBFGVÒ"À¢&WF†÷&—FF—fR4TrÕ’6ö÷&F–æFR5%2æB†VFW"×FòÖÖG&ç6f÷&Ò"À¢'vVÆÂG&¦V7F÷'’÷&–VçFF–öâ&VfW&Væ6RæBVæ—G2"À¢'fW&–f–VBvVÆÂFGVÒæBFWF‚&VfW&Væ6R"À¢'fW&–f–VB6V—6Ö–26×ÆR÷&–v–âæBFöÖ–â"À¢'&Wf–WvVBvVÆÂ×Fò×6V—6Ö–2F–ÖRÖFWF‚F–R"À¢ÒÀ¢&Wf–FVæ6Uö6Æ76–f–6F–öâ#¢°¢'v÷&¶&öö²#¢'6÷W&6RÖWFFF²‚õ’6ö÷&F–æFR&VfW&Væ6W2Vç&W6öÇfVB"À¢'7FæF&EöÆ2#¢'6÷W&6RÆör7W'fW3²&r×fW'7W2×&ö6W76VB7FGW2æ÷B–æFWVæFVçFÇ’W7F&Æ—6†VB"À¢&6ö×÷6—FUö–çFW'&WFVEöÆ2#¢&6ö×÷6—FRö–çFW'&WFVB6÷W&6R7W'fW2"À¢&FW&—fVEö7W'fUöæÖW2#¢6÷'FVB…ôDU$•dTEô5U%dUôäÔU2’À¢&6†V6·6†÷G2#¢'6÷W&6RÖFV6Æ&VBFWF‚÷F–ÖR—'3²æ÷BF–VBFò6V—6Ö–26×ÆW2"À¢&FWf–F–öç2#¢'6÷W&6RÖFV6Æ&VBFWF‚ö–æ6Æ–æF–öâö¦–×WF‚&V6÷&G3²æò…’G&¦V7F÷'’FW&—fVB"À¢&Ö&¶W'2#¢&–çFW'&WFVB6÷W&6RÖ&¶W'3²6V—6Ö–2†÷&—¦öâ76ö6–F–öâVçfW&–f–VB"À¢ÒÀ¢&Æöw2#¢µÒÂ'F&ÆW2#¢µÒÂ'vVÆÅö6÷VçB#¢Â&W'&÷'2#¢µÒÂ'&V6÷&G2#¢µÒÂ&'•÷vVÆÂ#¢·ÒÀ¢Ğ¢v÷&¶&öö²ÒvVÆÅ÷&ö÷Bò$6†ÆÆVævS5õvVÆÄÆ—7Eô–æf÷&ÖF–öâç†Ç7‚ ¢–bv÷&¶&öö²æW†—7G2‚“ ¢G'“ ¢&V6÷&G2ÒÆöE÷vVÆÅö–æf÷&ÖF–öâ‡v÷&¶&öö²Â6öÇVÖåöÖ–æs×²'vVÆÅö–B#¢%vVÆÂæÖR'ÒÀ¢†VFW%÷&÷sÓ2ÂÖ…ö6öÇVÖãÓ2¢&W÷'E²'vVÆÅö6÷VçB%ÒÒÆVâ‡&V6÷&G2¢f÷"—FVÒ–â&V6÷&G3 ¢fÇVW2Ò—FVÕ²'6÷W&6U÷fÇVW2%Ğ¢&V6÷&BÒ²'vVÆÅö–B#¢—FVÕ²'vVÆÅö–B%ÒÂ'6÷W&6R#¢v÷&¶&öö²ææÖRÀ¢'6÷W&6U÷&÷r#¢—FVÕ²'6÷W&6U÷&÷r%ÒÂ'6÷W&6U÷6†VWB#¢—FVÕ²'6÷W&6U÷6†VWB%ÒÀ¢'6÷W&6Uö†VFW%÷&÷r#¢—FVÕ²'6÷W&6Uö†VFW%÷&÷r%ÒÀ¢&FV6Æ&VE÷fÇVW2#¢¶³¢7G"‡b’–bb—2æ÷BæöæRVÇ6RæöæRf÷"²Âb–âfÇVW2æ—FV×2‚—ÒÀ¢&6ö÷&F–æFUöWf–FVæ6R#¢²'‚#¢fÇVW2ævWB‚%‚"’Â'’#¢fÇVW2ævWB‚%’"’À¢'Væ—G2#¢æöæRÂ&7'2#¢æöæRÂ&FGVÒ#¢æöæRÀ¢'7FGW2#¢'6÷W&6R‚õ’&W6VçC²6ö÷&F–æFRVæ—G2Â5%2ÂæBFGVÒVæf–Æ&ÆR'×Ğ¢&W÷'E²'&V6÷&G2%ÒæVæB‡&V6÷&B¢¶W’Ò÷vVÆÅö¶W’†—FVÕ²'vVÆÅö–B%Ò’÷"b'Væ76–væVC§v÷&¶&öö³§¶—FVÕ²w6÷W&6U÷&÷ru×Ò ¢w&÷WÒ&W÷'E²&'•÷vVÆÂ%Òç6WFFVfVÇB†¶W’ÂöæWuöw&÷W‚’¢w&÷W²'6÷W&6Uö–FVçF–f–W'2%ÒæVæB†—FVÕ²'vVÆÅö–B%Ò¢w&÷W²'v÷&¶&ööµ÷&V6÷&G2%ÒæVæB‡&V6÷&B¢W†6WB„–×÷'DW'&÷"ÂfÇVTW'&÷"Âõ4W'&÷"Â'VçF–ÖTW'&÷"’2W†3 ¢&W÷'E²&W'&÷'2%ÒæVæB‡²'6÷W&6R#¢v÷&¶&öö²ææÖRÂ'G—R#¢G—R†W†2’åõöæÖUõ÷Ò ¢f÷"F‚–â6÷'FVB‚‡vVÆÅ÷&ö÷Bò&Æ2"’ævÆö"‚"¢æÆ2"’“ ¢G'“ ¢Æ2Ò–ç7V7EöÆ2‡F‚¢7W'fW2ÒµĞ¢f÷"7W'fR–âÆ5²&7W'fW2%Ó ¢fÇVW2Òçæ6'&’†Æ5²&FF%ÒævWB†7W'fU²&ÖæVÖöæ–2%ÒÂ‚’’ÂGG—SÖfÆöB¢f–æ—FRÒfÇVW5¶çæ—6f–æ—FR‡fÇVW2•Ğ¢FW&—fVBÒ7W'fU²&ÖæVÖöæ–2%ÒçWW"‚’ç7Æ—B‚#¢"•³Ò–âôDU$•dTEô5U%dUôäÔU0¢Æ÷rÒfÆöB†f–æ—FRæÖ–â‚’’–bf–æ—FRç6—¦RVÇ6RæöæP¢†–v‚ÒfÆöB†f–æ—FRæÖ‚‚’’–bf–æ—FRç6—¦RVÇ6RæöæP¢Væ—BÒ7G"†7W'fRævWB‚'Væ—B"’÷"""’ç7G&—‚’æ66VföÆB‚’ç&WÆ6R‚""Â""¢VÆ—G•öfÆw2ÒµĞ¢–bVæ—B–â²&g&2"Â&g&7F–öâ"Â'b÷b"Â'gb'ÒæBf–æ—FRç6—¦RæB†Æ÷rÂ÷"†–v‚â“ ¢VÆ—G•öfÆw2æVæB‚&FV6Æ&VEög&7F–öåö÷WG6–FUó÷Fõó÷&Wf–Wu÷66Æ–æuö÷%÷6VçF–æVÇ2"¢–bFW&—fVBæBf–æ—FRç6—¦RæBÖ‚†'2†Æ÷r’Â'2††–v‚’’ãÒ ¢VÆ—G•öfÆw2æVæB‚&W‡G&VÖUöf–æ—FUö–çFW'&WFVE÷fÇVU÷&Wf–Wu÷6÷W&6UöVæ6öF–æuö÷%÷6VçF–æVÇ2"¢7W'fW2æVæB‡²¢§¶¶W“¢7W'fU¶¶W•Òf÷"¶W’–â‚&ÖæVÖöæ–2"Â'Væ—B"Â&FW67&—F–öâ"Â'6×ÆUö6÷VçB"Â&çVÆÅö6÷VçB"—ÒÀ¢&f–æ—FUö6÷VçB#¢–çB†f–æ—FRç6—¦R’À¢&f–æ—FUöÖ–â#¢Æ÷rÀ¢&f–æ—FUöÖVF–â#¢fÆöB†çæÖVF–â†f–æ—FR’’–bf–æ—FRç6—¦RVÇ6RæöæRÀ¢&f–æ—FUöÖ‚#¢†–v‚À¢'fÇVU÷VÆ—G•öfÆw2#¢VÆ—G•öfÆw2À¢&Wf–FVæ6Uö¶–æB#¢&FW&—fVEö÷%ö–çFW'&WFVE÷WG&÷‡—6–6Åö7W'fR"–bFW&—fVBVÇ6R'6÷W&6UöÆöu÷&W7öç6U÷6VÖçF–75÷VçfW&–f–VB"À¢'&uöÖV7W&VÖVçE÷7FGW2#¢&æ÷BW7F&Æ—6†VBg&öÒÖæVÖöæ–2ÆöæR'Ò¢ÆörÒ²'6÷W&6R#¢F‚ææÖRÂ'&÷fVææ6R#¢Æ5²'&÷fVææ6R%ÒÂ'vVÆÅö–B#¢Æ5²'vVÆÅö–B%ÒÀ¢'6×ÆW2#¢Æ5²'6×ÆUö6÷VçB%ÒÂ&FWF…öÖæVÖöæ–2#¢Æ5²&FWF…öÖæVÖöæ–2%ÒÀ¢&FWF…÷Væ—B#¢Æ5²&FWF…÷Væ—B%ÒÂ&FWF…÷7F'B#¢Æ5²&FWF…÷7F'B%ÒÀ¢&FWF…÷7F÷#¢Æ5²&FWF…÷7F÷%ÒÀ¢&FWF…÷&VfW&Væ6U÷7FGW2#¢$Ä2†—2Væ—B—26÷W&6RÖFV6Æ&VC²ÔBõEdBöFGVÒ&VÆF–öâVç&W6öÇfVB"À¢&7W'fW2#¢7W'fW2À¢&æ÷FR#¢%WG&÷‡—6–6Â&÷W'G’7W'fW2&R7FF–26÷W&6R6öçFW‡BÂæ÷BFV×÷&ÂfÇV–BÖ6†ævRö'6W'fF–öç2â'Ğ¢&W÷'E²&Æöw2%ÒæVæB†Æör¢¶W’Ò÷vVÆÅö¶W’†Æ5²'vVÆÅö–B%Ò’÷"b'Væ76–væVC¦Æ3§·F‚ææÖWÒ ¢w&÷WÒ&W÷'E²&'•÷vVÆÂ%Òç6WFFVfVÇB†¶W’ÂöæWuöw&÷W‚’¢w&÷W²'6÷W&6Uö–FVçF–f–W'2%ÒæVæB†Æ5²'vVÆÅö–B%Ò¢w&÷W²&Æöw2%ÒæVæB†Æör¢W†6WB„–×÷'DW'&÷"ÂfÇVTW'&÷"Âõ4W'&÷"Â'VçF–ÖTW'&÷"’2W†3 ¢&W÷'E²&W'&÷'2%ÒæVæB‡²'6÷W&6R#¢F‚ææÖRÂ'G—R#¢G—R†W†2’åõöæÖUõ÷Ò ¢f÷"F‚–â6÷'FVB‡vVÆÅ÷&ö÷BævÆö"‚"¢ò¢çG‡B"’“ ¢G'“ ¢F&ÆRÒ&VE÷vVÆÅ÷F&ÆR‡F‚¢ÖF6‚Ò&RæÖF6‚‡""ƒö’•â‡vVÆÅ²ÕòÓõÆB²’"ÂF‚ç7FVÒ¢f–ÆU÷vVÆÂÒÖF6‚æw&÷Wƒ’ç&WÆ6R‚%ò"Â"Ò"’ç&WÆ6R‚""Â"Ò"’–bÖF6‚VÇ6RæöæP¢—FVÒÒ²&6FVv÷'’#¢F‚ç&VçBææÖRÂ'6÷W&6R#¢F‚ææÖRÂ'vVÆÅö–Eög&öÕöf–ÆVæÖR#¢f–ÆU÷vVÆÂÀ¢'vVÆÅö¶W’#¢÷vVÆÅö¶W’†f–ÆU÷vVÆÂ’Â'&V6÷&G2#¢ÆVâ‡F&ÆRç&÷w2’À¢&FV6Æ&VEö6öÇVÖç2#¢Æ—7B‡F&ÆRæFV6Æ&VEö6öÇVÖç2’Â&6öÇVÖç2#¢Æ—7B‡F&ÆRæ6öÇVÖç2’À¢&FV6Æ&VE÷Væ—G2#¢Æ—7B‡F&ÆRæFV6Æ&VE÷Væ—G2’Â'Væ—G2#¢Æ—7B‡F&ÆRçVæ—G2’À¢&Ö&–wV÷W5÷&÷w2#¢F&ÆRç&÷u÷v–GF…öÖ—6ÖF6…ö6÷VçBÂ&†VFW%ö÷&–v–â#¢F&ÆRæ†VFW%ö÷&–v–âÀ¢'6÷W&6UöÆ–æUöçVÖ&W'2#¢Æ—7B‡F&ÆRç6÷W&6UöÆ–æUöçVÖ&W'2’À¢'&u÷&V6÷&G2#¢¶Æ—7B‡&÷r’f÷"&÷r–âF&ÆRç&÷w5ÒÀ¢'&uöFFöÆ–æW2#¢Æ—7B‡F&ÆRç&uöFFöÆ–æW2’À¢'VÆ—G’#¢÷F&ÆUöçVÖW&–5÷2‡F‚ç&VçBææÖRÂF&ÆR’À¢&Wf–FVæ6Uö¶–æB#¢‚&FV6Æ&VEö6†V6·6†÷E÷—'2"–bF‚ç&VçBææÖRÓÒ&6†V6·6†÷G2"VÇ6P¢'6÷W&6UöFWf–F–öå÷7W'fW’"–bF‚ç&VçBææÖRÓÒ&FWf–F–öç2"VÇ6R&–çFW'&WFVEöf÷&ÖF–öåöÖ&¶W'2"’À¢&76ö6–F–öå÷66÷R#¢&f–ÆVæÖRw&÷W26÷W&6R&V6÷&G2'’vVÆÂöæÇ“²æò6V—6Ö–2÷6—F–öâ÷"†÷&—¦öâF–R'Ğ¢&W÷'E²'F&ÆW2%ÒæVæB†—FVÒ¢¶W’Ò—FVÕ²'vVÆÅö¶W’%Ò÷"b'Væ76–væVC§F&ÆS§·F‚ææÖWÒ ¢w&÷WÒ&W÷'E²&'•÷vVÆÂ%Òç6WFFVfVÇB†¶W’ÂöæWuöw&÷W‚’¢w&÷W²'6÷W&6Uö–FVçF–f–W'2%ÒæVæB†f–ÆU÷vVÆÂ¢w&÷W²'F&ÆW2%ÒæVæB†—FVÒ¢W†6WB„õ4W'&÷"ÂVæ–6öFTW'&÷"ÂfÇVTW'&÷"’2W†3 ¢&W÷'E²&W'&÷'2%ÒæVæB‡²'6÷W&6R#¢F‚ææÖRÂ'G—R#¢G—R†W†2’åõöæÖUõ÷Ò ¢&W÷'E²&76ö6–F–öåö76W76ÖVçB%ÒÒ°¢'7FGW2#¢'Væf–Æ&ÆR"Â'7F–Å÷vVÆÅ÷Fõ÷6V—6Ö–2#¢fÇ6RÀ¢'fW'F–6Å÷vVÆÅ÷Fõ÷6×ÆR#¢fÇ6RÀ¢&w&÷WVE÷6÷W&6U÷vVÆÅö6÷VçB#¢7VÒ†&ööÂ‡e²'v÷&¶&ööµ÷&V6÷&G2%Ò÷"e²&Æöw2%Ò÷"e²'F&ÆW2%Ò¢f÷"b–â&W÷'E²&'•÷vVÆÂ%ÒçfÇVW2‚’’À¢'&V6öâ#¢'v÷&¶&öö²‚õ’Æ6·2FV6Æ&VBVæ—G2ô5%2öFGVÓ²4TrÕ’Ö5%2æB6×ÆR÷&–v–âVç&W6öÇfVC²FWf–F–öâ÷&–VçFF–öâ&VfW&Væ6R–æ6ö×ÆWFR"À¢'vVÆÅöFF÷&öÆR#¢&6öçFW‡GVÂÆörÂÖ&¶W"Â6†V6·6†÷BÂæBFWf–F–öâWf–FVæ6S²æòf–æF–ær×7V6–f–276ö6–F–öâ"À¢Ğ¢&W÷'E²'vVÆÅöWf–FVæ6UöÖG&—‚%ÒÒ'V–ÆE÷vVÆÅöWf–FVæ6UöÖG&—‚‡&W÷'B¢&WGW&â&W÷'@ 

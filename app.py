@@ -43,7 +43,11 @@ from reservoir_time_machine.visualization.presentation_cache import (
     presentation_identity,
     presentation_cache_token,
 )
-from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary, build_well_evidence_matrix
+from reservoir_time_machine.data_ingest.well_evidence import (
+    acoustic_impedance_summary,
+    well_evidence_summary,
+    build_well_evidence_matrix,
+)
 from reservoir_time_machine.data_ingest.spatial_geometry import (
     conditionally_map_well_coordinates,
     sample_segy_header_geometry,
@@ -162,6 +166,11 @@ def cached_preliminary(dataset_id, sample_index, bounds, analysis_version, artif
 @st.cache_data(max_entries=2)
 def cached_well_evidence(root, source_identity):
     return well_evidence_summary(root)
+
+
+@st.cache_data(max_entries=2)
+def cached_acoustic_impedance(root, source_identity):
+    return acoustic_impedance_summary(root)
 
 
 @st.cache_data(max_entries=2, show_spinner="Sampling SEG-Y headers for a conditional coordinate check…")
@@ -1370,6 +1379,23 @@ elif page == "Well inventory":
     if matrix_rows:
         st.dataframe(matrix_rows,use_container_width=True,hide_index=True)
     st.caption("Curve mnemonics are reported as supplied. PHIE, PERM, SWE, VOIL and VGAS are interpreted/derived source curves, not independently verified fluid or reservoir truth. Workbook X/Y values are shown as source numbers only; units, CRS and datum are unspecified.")
+    try:
+        ai_identity = tuple((str(p), p.stat().st_size, p.stat().st_mtime_ns)
+                            for p in sorted((settings.challenge3_root / "well_data" / "las").glob("*.las")))
+        ai_rows = cached_acoustic_impedance(str(settings.challenge3_root), ai_identity)
+        st.markdown("### Sonic-density acoustic-impedance QC")
+        display_rows = []
+        for item in ai_rows:
+            stats = item.get("acoustic_impedance_mrayl", {})
+            display_rows.append({"Well": item["well_id"], "Status": item["status"], "Source curves":
+                f"{item.get('sonic_curve') or '—'} × {item.get('density_curve') or '—'}",
+                "Valid samples": f"{item.get('valid_samples', 0):,} / {item.get('total_samples', 0):,}",
+                "AI median (MRayl)": round(stats["median"], 2) if stats else "—",
+                "AI p10–p90 (MRayl)": f"{stats['p10']:.2f}–{stats['p90']:.2f}" if stats else "—"})
+        st.dataframe(display_rows, use_container_width=True, hide_index=True)
+        st.caption("P-impedance is calculated only from same-file sonic and density curves with compatible declared units, using valid paired depth samples. It is a log-derived rock-property indicator; it does not establish a synthetic seismic tie, fluid type, or production-related change.")
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        st.info(f"Sonic-density impedance summary unavailable: {exc}")
     st.info("Well-local marker/checkshot interpolation is available where both files declare compatible TVDSS (m) and TWT (ms). It is not a well-to-seismic tie. SEG-Y headers show 2 ms sampling and zero recording delay, but the textual headers do not explicitly declare a TWT sample domain; trace XY coordinates are zero and coordinate units are unset.")
     baseline_path = settings.challenge3_root / "volumes" / "Challenge3_Baseline_FilteredScaled_FullStack.sgy"
     monitor_path = settings.challenge3_root / "volumes" / "Challenge3_Monitor_FilteredScaled_FullStack.sgy"
@@ -1789,8 +1815,4 @@ else:
                 {"Evidence component": "Bayesian evidence fusion", "Execution": "Prototype code available", "Validation boundary": "No calibrated class likelihoods or posterior probability published"},
                 {"Evidence component": "3D convolutional autoencoder", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
                 {"Evidence component": "Siamese 3D CNN", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
-            ], use_container_width=True, hide_index=True)
-            st.caption("Bayesian and neural outputs are not fused into the discovery list unless independently trained/calibrated and validated. Synthetic training results, if run, are computational experiments only.")
-        st.markdown(f"**Stage 3 package** · `{stage3_registry['id'][:16]}` · {len(stage3_registry['checksums'])} checksummed artifacts · schema `{stage3_registry['schema']}`")
-
-# Autosync acceptance canary: source-only, non-functional deployment check.
+            ], use_co

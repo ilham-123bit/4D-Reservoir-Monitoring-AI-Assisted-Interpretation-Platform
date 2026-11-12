@@ -6,6 +6,7 @@ from reservoir_time_machine.data_ingest.spatial_geometry import (
     conditionally_map_well_coordinates,
     fit_inline_crossline_affine,
 )
+from reservoir_time_machine.data_ingest.well_evidence import compute_acoustic_impedance_mrayl
 
 
 class SpatialGeometryTests(unittest.TestCase):
@@ -50,6 +51,18 @@ class SpatialGeometryTests(unittest.TestCase):
             "coefficient_rows_inline_crossline_intercept_columns_x_y": [[1, 2], [2, 4], [0, 0]]}}
         result = conditionally_map_well_coordinates([], geometry, inline_ids=[1, 2], crossline_ids=[3, 4])
         self.assertEqual(result["status"], "unavailable")
+
+    def test_acoustic_impedance_uses_declared_units_and_masks_invalid_pairs(self):
+        depth, impedance = compute_acoustic_impedance_mrayl(
+            [1000, 1001, 1002], [100, -9999, 50], [2.5, 2.4, 2.0],
+            sonic_unit="us/ft", density_unit="g/cm3")
+        np.testing.assert_array_equal(depth, [1000, 1002])
+        np.testing.assert_allclose(impedance, [7.62, 12.192])
+        _, composite_impedance = compute_acoustic_impedance_mrayl(
+            [1000], [100], [2.5], sonic_unit="US/F", density_unit="G/CC")
+        np.testing.assert_allclose(composite_impedance, [7.62])
+        with self.assertRaisesRegex(ValueError, "declared sonic"):
+            compute_acoustic_impedance_mrayl([1], [100], [2.5], sonic_unit="us/m", density_unit="g/cm3")
 
 
 if __name__ == "__main__":
