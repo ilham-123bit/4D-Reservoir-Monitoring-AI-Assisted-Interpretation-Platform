@@ -49,9 +49,9 @@ class DashboardRenderingTests(unittest.TestCase):
             app = AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'), default_timeout=30).run()
             self.assertEqual(list(app.exception), [])
             overview_text = '\n'.join(v.value for v in app.markdown)
-            self.assertIn('Angsi · Reservoir Intelligence', overview_text)
-            self.assertIn('Angsi · Reservoir Intelligence', overview_text)
-            self.assertTrue(any('No completed, validated findings registry' in x.value for x in app.info))
+            self.assertIn('Angsi · Reservoir Decisions', overview_text)
+            self.assertIn('Angsi · Reservoir Decisions', overview_text)
+            self.assertTrue(any('No usable source-linked seismic regions' in x.value for x in app.info))
             self.assertEqual(len(app.slider), 0)
             warning = 'Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.'
             self.assertNotIn(warning, [x.value for x in app.warning])

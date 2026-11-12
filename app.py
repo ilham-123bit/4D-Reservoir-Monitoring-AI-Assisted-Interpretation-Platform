@@ -43,6 +43,9 @@ from reservoir_time_machine.analysis.recovery_intelligence import (
 from reservoir_time_machine.analysis.local_compartment_screen import (
     screen_local_compartments, development_hypothesis,
 )
+from reservoir_time_machine.analysis.reservoir_hypotheses import (
+    screen_response_regions, candidate_briefing,
+)
 from reservoir_time_machine.analysis.conditional_reservoir import (
     conditional_follow_up_actions, conditional_i100_locations, conditional_scenario_key,
     evaluate_conditional_window, load_conditional_i100_evidence,
@@ -564,7 +567,12 @@ stage3_locations = {
     item["id"]: item["finding"]["array_location"] for item in stage3_investigations
 }
 selected_investigation = None
-if stage3_investigations:
+# Scientific full-field findings take precedence over the historical Stage 3
+# QC queue. Never silently substitute a QC action for a full-volume finding.
+if full_field_registry and field_entry:
+    selected_investigation = {"id": field_finding["id"], "kind": "full_field_screening",
+                              "finding": field_finding}
+elif stage3_investigations:
     stage3_ids = set(stage3_locations)
     selected_id = st.session_state.get("selected_finding_id")
     if selected_id not in stage3_ids:
@@ -573,9 +581,6 @@ if stage3_investigations:
     if st.session_state.get("stage3_finding_selection") != selected_id:
         st.session_state["stage3_finding_selection"] = selected_id
     selected_investigation = select_investigation(stage3_registry, selected_id)
-elif full_field_registry and field_entry:
-    selected_investigation = {"id": field_finding["id"], "kind": "full_field_screening",
-                              "finding": field_finding}
 
 # A selected scientific record owns the synchronized source location. Manual
 # navigation is available only on the separately named Expert diagnostics page.
@@ -598,9 +603,10 @@ if registry and registry['entries']:
         st.session_state['registry_selection']=st.session_state['preliminary_choice']
     entry=next(e for e in registry['entries'] if e['id']==st.session_state['registry_selection'])
     guided_result,guided_finding=entry['result'],entry['finding']
-    selected_investigation = {"id": guided_finding["id"], "kind": "bounded_screening",
-                              "finding": guided_finding}
-    st.session_state["selected_finding_id"] = guided_finding["id"]
+    if selected_investigation is None:
+        selected_investigation = {"id": guided_finding["id"], "kind": "bounded_screening",
+                                  "finding": guided_finding}
+        st.session_state["selected_finding_id"] = guided_finding["id"]
     if st.session_state.get("last_synced_finding_id") != guided_finding["id"]:
         location = (guided_finding["array_location"] if "array_location" in guided_finding
                     else guided_finding["representative"])
@@ -638,6 +644,13 @@ if qc_artifact_path.is_file():
     except (OSError, ValueError, KeyError, TypeError):
         qc_artifact_error = "Survey QC artifact failed source, version, or checksum validation."
 
+@st.cache_data(max_entries=16, show_spinner=False)
+def cached_coherent_response(dataset_identity, finding_id, indices,
+                             _baseline, _monitor, _missing, _inline_ids, _crossline_ids):
+    return screen_response_regions(_baseline, _monitor, _missing, indices,
+                                   _inline_ids, _crossline_ids)
+
+
 with st.sidebar:
     st.header("RESERVOIR TIME MACHINE")
     page_group = st.radio("Workspace", [
@@ -649,20 +662,20 @@ with st.sidebar:
         "05 — Development Studio",
     ], index=0, label_visibility="collapsed", key="workspace_page")
     page = {
-        "HOME — Reservoir Intelligence": "Reservoir Command Center",
+        "HOME — Reservoir Intelligence": "Reservoir Decision Briefing",
         "01 — Confidence & QC": "Overview and QC",
         "02 — 3D Reservoir": "3D discovery map",
         "03 — 4D Reservoir Evolution": "4D comparison",
         "04 — Geology & Wells": "Well inventory",
-        "05 — Development Studio": "Recovery intelligence",
+        "05 — Development Studio": "Reservoir Decisions",
     }[page_group]
     subviews = {
-        "HOME — Reservoir Intelligence": ["Reservoir Command Center"],
+        "HOME — Reservoir Intelligence": ["Reservoir Decision Briefing"],
         "01 — Confidence & QC": ["Overview and QC", "Change detection", "Evidence explanation", "Expert diagnostics"],
         "02 — 3D Reservoir": ["3D discovery map", "3D explorer"],
         "03 — 4D Reservoir Evolution": ["4D comparison", "Survey transition"],
         "04 — Geology & Wells": ["Well inventory"],
-        "05 — Development Studio": ["Recovery intelligence"],
+        "05 — Development Studio": ["Reservoir Decisions", "Recovery intelligence"],
     }[page_group]
     if len(subviews) > 1:
         page = st.sidebar.selectbox("Section", subviews, key=f"section_{page_group}")
@@ -752,7 +765,183 @@ if page not in ("Overview and QC", "Reservoir Command Center", "Gemma AI Copilot
         st.info('No completed valid findings registry is available. Expert seismic views remain available; automatic ML analysis does not run on page load.')
         st.caption('Coverage: N/A · no completed findings registry is available.')
 
-if page == "Reservoir Command Center":
+if page == "Reservoir Decision Briefing":
+    app_header.empty()
+    page_header("Angsi · Reservoir Decisions",
+                "1995 → 2006 | Measured change · Possible mechanisms · Next investigation")
+
+    # Use real source locations from the best available registry. Full-field
+    # candidates outrank the historical, QC-first Stage 3 archive as the SOURCE,
+    # but no anomaly automatically becomes a hydrocarbon prospect.
+    if full_field_registry and full_field_registry["entries"]:
+        _brief_source = "full_field"
+        _brief_source_records = [item["finding"] for item in full_field_registry["entries"]]
+    elif stage3_registry:
+        _brief_source = "historical_stage3"
+        _brief_source_records = stage3_registry["historical_findings"]
+    elif registry and registry["entries"]:
+        _brief_source = "bounded"
+        _brief_source_records = [item["finding"] for item in registry["entries"]]
+    else:
+        _brief_source = "none"
+        _brief_source_records = []
+
+    _brief_records = []
+    _brief_maps = {}
+    _brief_findings = {}
+    for _source_record in _brief_source_records[:10]:
+        _position = _source_record.get("array_location", _source_record.get("representative"))
+        _record_id = str(_source_record.get("id", ""))
+        if not _record_id or not isinstance(_position, (list, tuple)) or len(_position) != 3:
+            continue
+        try:
+            _region_result = cached_coherent_response(
+                dataset_cache_identity, _record_id, tuple(int(v) for v in _position),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _brief = candidate_briefing(_source_record, _region_result, source=_brief_source)
+        except (ValueError, IndexError, TypeError, KeyError) as _screen_error:
+            continue
+        _brief_records.append(_brief)
+        _brief_maps[_record_id] = _region_result
+        _brief_findings[_record_id] = _source_record
+
+    _brief_records.sort(key=lambda rec: (-rec["investigation_priority_index"], rec["id"]))
+    if not _brief_records:
+        st.info("No usable source-linked seismic regions are available yet.")
+        st.caption("Finding activation and source checks: Confidence & QC.")
+    else:
+        _choices = [rec["id"] for rec in _brief_records]
+        if st.session_state.get("home_focus_id") not in _choices:
+            _known = st.session_state.get("selected_finding_id")
+            st.session_state["home_focus_id"] = _known if _known in _choices else _choices[0]
+        _by_id = {rec["id"]: rec for rec in _brief_records}
+        _chosen_id = st.selectbox(
+            "Select a measured seismic region",
+            _choices, key="home_focus_id",
+            format_func=lambda key: (
+                f"{_choices.index(key)+1:02d} · {key[-10:]} · "
+                + ("Change + quieter neighbor" if _by_id[key]["quieter_region"] and _by_id[key]["stronger_region"]
+                   else "Stronger response" if _by_id[key]["stronger_region"]
+                   else "Quieter response" if _by_id[key]["quieter_region"]
+                   else "No robust local contrast")
+            ),
+        )
+        _focused = _by_id[_chosen_id]
+        _measured = _brief_maps[_chosen_id]
+        _focus_region = _focused["quieter_region"] or _focused["stronger_region"]
+        _focus_array = (_focus_region or {}).get("center_array", _focused["source_array_location"])
+        _focus_coord = (_focus_region or {}).get("center_segy", {})
+        if not _focus_coord:
+            _focus_coord = {"inline_id": int(inline_header_ids[_focus_array[0]]),
+                            "crossline_id": int(crossline_header_ids[_focus_array[1]]),
+                            "sample_index": int(_focus_array[2])}
+        if st.session_state.get("last_brief_focus_id") != _chosen_id:
+            st.session_state["selected_finding_id"] = _chosen_id
+            if _brief_source == "full_field":
+                st.session_state["registry_selection"] = _chosen_id
+            elif _brief_source == "historical_stage3":
+                st.session_state["stage3_finding_selection"] = _chosen_id
+            _jump_to_finding(_focus_array)
+            st.session_state["last_brief_focus_id"] = _chosen_id
+            st.session_state["last_synced_finding_id"] = _chosen_id
+        selected_investigation = {
+            "id": _chosen_id, "kind": _brief_source + "_spatial_screen",
+            "finding": _brief_findings[_chosen_id],
+        }
+
+        _cols = st.columns(3, gap="medium")
+        with _cols[0]:
+            st.markdown("### 01 · What changed and where?")
+            st.write(_focused["finding_text"])
+            st.markdown(
+                f"**SEG-Y IL {_focus_coord['inline_id']} · XL {_focus_coord['crossline_id']} "
+                f"· sample {_focus_coord['sample_index']}**"
+            )
+            st.caption(f"Measured nearby traces: {_focused['local_trace_support']:,}.")
+        with _cols[1]:
+            st.markdown("### 02 · Why could it change?")
+            st.write(_focused["why"])
+            st.caption("Two vintages do not uniquely identify fluid type or pressure change.")
+        with _cols[2]:
+            st.markdown("### 03 · Where to investigate next?")
+            st.write(_focused["next_decision"])
+            st.caption("Source-grid search area, not a drill-ready well location.")
+
+        st.markdown("### 1995 → 2006 · Coherent response map")
+        _map = go.Figure()
+        _bounds = _measured["bounds"]
+        _map.add_trace(go.Heatmap(
+            z=_measured["response_map"],
+            x=np.asarray(crossline_header_ids[_bounds[2]:_bounds[3]]),
+            y=np.asarray(inline_header_ids[_bounds[0]:_bounds[1]]),
+            colorscale="Viridis", zmin=0, zmax=200,
+            colorbar={"title": "NRMS (%)"},
+            hovertemplate="IL %{y} · XL %{x}<br>NRMS %{z:.1f}%<extra></extra>",
+        ))
+        for _kind, _label, _color in (
+            ("changed", "Stronger response", "#48f5ce"),
+            ("relatively_quiet", "Quieter response", "#ffca73"),
+        ):
+            for _zone in _measured["response_region_groups"][_kind]:
+                _xy = _zone["center_segy"]
+                _map.add_trace(go.Scatter(
+                    x=[_xy["crossline_id"]], y=[_xy["inline_id"]],
+                    mode="markers+text", name=_label, text=[str(_zone["trace_count"])+" traces"],
+                    textposition="top center",
+                    marker={"size": 13, "color": _color, "symbol": "circle-open",
+                            "line": {"color": _color, "width": 3}},
+                    hovertemplate=(f"{_label}<br>IL {_xy['inline_id']} · XL {_xy['crossline_id']}"
+                                   f"<br>sample {_xy['sample_index']}"
+                                   f"<br>median {_zone['median_nrms_percent']}% NRMS"
+                                   f"<br>{_zone['trace_count']} connected traces<extra></extra>"),
+                ))
+        _map.update_layout(
+            template="plotly_dark", height=445,
+            paper_bgcolor="#080d0e", plot_bgcolor="#101719",
+            font={"color": "#fff"}, margin={"l": 25, "r": 20, "t": 10, "b": 35},
+            xaxis_title="SEG-Y crossline", yaxis_title="SEG-Y inline",
+            legend={"orientation": "h", "y": -0.2},
+        )
+        st.plotly_chart(_map, width="stretch", theme=None, key="reservoir_decision_response_map")
+        if _focused["stronger_region"] and _focused["quieter_region"]:
+            _h, _q = _focused["stronger_region"], _focused["quieter_region"]
+            st.markdown(
+                f"**Changed area:** IL {_h['center_segy']['inline_id']} / XL {_h['center_segy']['crossline_id']} "
+                f"· {_h['median_nrms_percent']:.1f}% NRMS / {_h['trace_count']} traces. "
+                f"**Quieter comparison:** IL {_q['center_segy']['inline_id']} / XL {_q['center_segy']['crossline_id']} "
+                f"· {_q['median_nrms_percent']:.1f}% NRMS / {_q['trace_count']} traces."
+            )
+        else:
+            st.caption("No defensible two-region contrast at this sampled interval.")
+        st.caption(
+            f"Local median {_focused['local_median_nrms_percent'] if _focused['local_median_nrms_percent'] is not None else 'N/A'}% NRMS "
+            f"· required separation {_focused['required_contrast_pp'] if _focused['required_contrast_pp'] is not None else 'N/A'} pp "
+            "· paired seismic, not a saturation or sweep fraction."
+        )
+        _models = _focused["ml_evidence"]
+        st.caption(
+            f"ML flags on original component: {_models['n_models_with_flags']} detector(s) · "
+            "statistical agreement, not fluid classification."
+        )
+        with st.expander("Investigation catalogue and confidence", expanded=False):
+            st.dataframe([{
+                "Priority": i+1, "Finding": rec["id"],
+                "IL": (rec["location"] or {}).get("inline_id"),
+                "XL": (rec["location"] or {}).get("crossline_id"),
+                "Sample": (rec["location"] or {}).get("sample_index"),
+                "Spatial response": rec["spatial_pattern"],
+                "Evidence index (not probability)": rec["investigation_priority_index"],
+                "Edge risk": rec["edge_risk"],
+                "Drill-ready": "No",
+            } for i, rec in enumerate(_brief_records)], width="stretch", hide_index=True)
+            st.write(
+                "This screen maps measured coherent differences and quieter patches. "
+                "Oil, gas, water, effective sweep and bypassed volumes cannot be "
+                "identified from these seismic data alone without positive reservoir "
+                "and dynamic evidence. Scientific checks: Confidence & QC."
+            )
+
+elif page == "Reservoir Command Center":
     page_header("Angsi · Reservoir Intelligence",
                 "1995 → 2006 | What changed · Why · Where to investigate")
 
@@ -2081,6 +2270,135 @@ elif page == "Evidence explanation":
                 st.warning("Transmission policy did not authorize this request; no payload was sent.")
         st.caption("Gemma can select only constrained statements and exact supplied values. It does not validate geology; service output remains subject to human review.")
 
+elif page == "Reservoir Decisions":
+    app_header.empty()
+    page_header("Development Studio", "Measured opportunity areas · conditional choices · source coordinates")
+    if full_field_registry and full_field_registry["entries"]:
+        _decisions = [item["finding"] for item in full_field_registry["entries"]]
+        _decision_source = "full_field"
+    elif stage3_registry:
+        _decisions = stage3_registry["historical_findings"]
+        _decision_source = "historical_stage3"
+    elif registry and registry["entries"]:
+        _decisions = [item["finding"] for item in registry["entries"]]
+        _decision_source = "bounded"
+    else:
+        _decisions = []
+        _decision_source = "none"
+    # Rank spatially coherent response evidence, not the historical MAD or QC
+    # queue. The resulting index is NOT reservoir prospect probability.
+    _ranked_decisions = []
+    for _possible in _decisions[:10]:
+        _candidate_point = _possible.get("array_location", _possible.get("representative"))
+        if not _candidate_point:
+            continue
+        try:
+            _result = cached_coherent_response(
+                dataset_cache_identity, _possible["id"], tuple(_candidate_point),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _record = candidate_briefing(_possible, _result, source=_decision_source)
+        except (ValueError, KeyError, IndexError, TypeError):
+            continue
+        _ranked_decisions.append((_record["investigation_priority_index"], _possible))
+    _ranked_decisions.sort(key=lambda pair: (-pair[0], pair[1]["id"]))
+    _decisions = [item for _, item in _ranked_decisions]
+    if not _decisions:
+        st.info("No source-linked candidate can be evaluated from the paired seismic.")
+    else:
+        _idx = {item["id"]: item for item in _decisions}
+        _ids = list(_idx)
+        if st.session_state.get("development_focus_id") not in _idx:
+            _previous = st.session_state.get("selected_finding_id")
+            st.session_state["development_focus_id"] = _previous if _previous in _idx else _ids[0]
+        _key = st.selectbox("Source-linked investigation", _ids,
+                            format_func=lambda key: f"Area {_ids.index(key)+1:02d} · {key[-12:]}",
+                            key="development_focus_id")
+        _candidate = _idx[_key]
+        _loc = _candidate.get("array_location", _candidate.get("representative"))
+        try:
+            _patch = cached_coherent_response(
+                dataset_cache_identity, _key, tuple(_loc),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _brief = candidate_briefing(_candidate, _patch, source=_decision_source)
+        except (ValueError, KeyError, IndexError, TypeError) as _err:
+            st.error("This finding could not be mapped to supported source traces.")
+        else:
+            selected_investigation = {"id": _key, "kind": _decision_source + "_spatial_screen",
+                                      "finding": _candidate}
+            if st.session_state.get("last_development_focus_id") != _key:
+                st.session_state["selected_finding_id"] = _key
+                st.session_state["last_development_focus_id"] = _key
+                if _decision_source == "full_field":
+                    st.session_state["registry_selection"] = _key
+                elif _decision_source == "historical_stage3":
+                    st.session_state["stage3_finding_selection"] = _key
+                _jump_to_finding(_loc)
+                st.session_state["last_synced_finding_id"] = _key
+            _area = _brief["quieter_region"] or _brief["stronger_region"]
+            _where = (_area or {}).get("center_segy") or _candidate.get("segy_location")
+            if not _where:
+                _where = {"inline_id": int(inline_header_ids[_loc[0]]),
+                          "crossline_id": int(crossline_header_ids[_loc[1]]),
+                          "sample_index": int(_loc[2])}
+            st.markdown(
+                f"### Area · IL {_where['inline_id']} · XL {_where['crossline_id']} · "
+                f"sample {_where['sample_index']}"
+            )
+            _one, _two, _three = st.columns(3)
+            with _one:
+                st.markdown("**Seismic evidence**")
+                st.write(_brief["finding_text"])
+            with _two:
+                st.markdown("**Reservoir mechanism to test**")
+                st.write(_brief["why"])
+            with _three:
+                st.markdown("**Engineering decision**")
+                st.write(_brief["next_decision"])
+
+            if _brief["stronger_region"] and _brief["quieter_region"]:
+                _change = _brief["stronger_region"]
+                _quiet = _brief["quieter_region"]
+                st.markdown(
+                    f"**Observed comparison:** stronger {_change['median_nrms_percent']:.1f}% NRMS "
+                    f"at IL {_change['center_segy']['inline_id']}/XL {_change['center_segy']['crossline_id']}; "
+                    f"quieter {_quiet['median_nrms_percent']:.1f}% NRMS "
+                    f"at IL {_quiet['center_segy']['inline_id']}/XL {_quiet['center_segy']['crossline_id']}."
+                )
+            st.caption(
+                f"ML source support: {_brief['ml_evidence']['n_models_with_flags']} "
+                "component detector(s) flagged. Not a geological probability."
+            )
+            st.markdown("### Development options — evidence gates")
+            st.dataframe([
+                {"Option": "Infill / sidetrack", "Current decision": "Conditional only",
+                 "Required support": "Reservoir-quality sand at quieter source area, supported oil saturation and drillable geometry"},
+                {"Option": "Recompletion", "Current decision": "Evaluate if existing well intersects target",
+                 "Required support": "Verified well trajectory, untapped completion interval and production history"},
+                {"Option": "Injection or sweep optimization", "Current decision": "Model scenario, not field instruction",
+                 "Required support": "Pressure/rate/injection history and plausible reservoir connectivity"},
+                {"Option": "Targeted reservoir surveillance", "Current decision": "Highest readiness",
+                 "Required support": "Tie sampled seismic interval, local repeatability and well-pressure comparison"},
+            ], width="stretch", hide_index=True)
+            with st.expander("Six-discipline technical decisions", expanded=False):
+                _il, _xl, _si = _where["inline_id"], _where["crossline_id"], _where["sample_index"]
+                st.markdown(
+                    f"**Geophysicist:** At IL {_il}/XL {_xl}, test repeatable 4D amplitude and phase against vintage registration.\n\n"
+                    f"**Geologist:** Map facies, faults and sand continuity between stronger and quieter patches near sample {_si}.\n\n"
+                    f"**Petrophysicist:** Check oil-bearing reservoir quality and sonic-density compatibility at spatially eligible wells.\n\n"
+                    f"**Reservoir engineer:** Test depletion, pressure and saturation scenarios across this candidate's response pattern.\n\n"
+                    f"**Production engineer:** Match rate, GOR, water cut and injection changes with any spatially verified nearby wells.\n\n"
+                    f"**Drilling engineer:** Screen infill/sidetrack feasibility only if reservoir geometry and hydrocarbon presence are supported."
+                )
+            st.caption(
+                "This is a source-grid investigation, not a verified oil pool, swept fraction, fluid-flow arrow "
+                "or sanctioned drilling target. Candidate priority is not Chance of Success."
+            )
+            _download_record = dict(_brief)
+            st.download_button("Export investigation evidence (JSON)",
+                               json.dumps(_download_record, indent=2),
+                               file_name=f"rtm-investigation-{_key}.json",
+                               mime="application/json")
+
 else:
     page_header("Development Studio", "Where to investigate, what to test and why.")
     if stage3_registry is None:
@@ -2266,7 +2584,8 @@ if page != "Gemma AI Copilot":
         selected=selected_investigation, scenario_records=_copilot_records,
         evidence_sha256=_copilot_sha,
     )
-    _view_point = [int(inline), int(crossline), int(sample)]
+    _view_point = [int(st.session_state.get(k, v)) for k, v in zip(
+        ("shared_inline", "shared_crossline", "shared_sample"), (inline, crossline, sample))]
     _view_baseline = float(baseline[tuple(_view_point)])
     _view_monitor = float(monitor[tuple(_view_point)])
     _view_valid = bool(
@@ -2288,5 +2607,28 @@ if page != "Gemma AI Copilot":
         "monitor_amplitude_source_units_unspecified": _view_monitor if _view_valid else None,
         "monitor_minus_baseline_source_units_unspecified": _view_monitor - _view_baseline if _view_valid else None,
     })
+    # Include exact measurements from the current connected-region view.
+    # Gemma receives no raw seismic cube and cannot turn these into fluid truth.
+    _current_brief = (_focused if page == "Reservoir Decision Briefing" and
+                      "_focused" in locals()
+                      else _brief if page == "Reservoir Decisions" and "_brief" in locals()
+                      else None)
+    if _current_brief is not None:
+        _copilot_context["evidence"].append({
+            "id": "current-coherent-spatial-response",
+            "category": "measured_connected_seismic_regions",
+            "page": str(page_group),
+            "finding_id": _current_brief["id"],
+            "source_grid": _current_brief["source_array_location"],
+            "stronger_region": _current_brief["stronger_region"],
+            "quieter_region": _current_brief["quieter_region"],
+            "spatial_pattern": _current_brief["spatial_pattern"],
+            "finding": _current_brief["finding_text"],
+            "alternative_mechanisms": _current_brief["why"],
+            "conditional_action": _current_brief["next_decision"],
+            "hydrocarbon_state": _current_brief["bypassed_hydrocarbon"],
+            "source_ml_model_flags": _current_brief["ml_evidence"],
+            "drilling_location": None,
+        })
     with st.expander("Ask Gemma about this view", expanded=False):
         render_gemma_copilot(_copilot_context)
