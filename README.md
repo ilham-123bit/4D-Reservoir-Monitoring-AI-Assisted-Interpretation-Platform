@@ -50,3 +50,5 @@ The repository includes classical detectors and experimental Bayesian, Autoencod
 New deployments require authorized datasets, correct survey geometry, existing or scheduled processing, and source-specific well references. Heavy computation runs outside Streamlit using configured resources and saved artifacts. This repository contains software and configuration templates, **not** organizer SEG-Y/LAS inputs, private derived data, checkpoints, secrets, or internal service endpoints.
 
 The application differentiates observations, conditional hypotheses, and sanctioned development decisions. No hypothesis may be promoted to a drilling recommendation without adequate evidence.
+
+See [final RTM product and release acceptance contract](docs/rtm-product-contract.md) for the complete scientific, UI, Gemma and deployment requirements.
