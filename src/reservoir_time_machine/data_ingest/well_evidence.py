@@ -89,10 +89,15 @@ def marker_checkshot_correlations(group):
     depths, times = depths[order], times[order]
     if len(depths) < 2 or not np.isfinite(depths).all() or not np.isfinite(times).all() or np.any(np.diff(depths) <= 0):
         return {"status": "unavailable", "reason": "Checkshot depth support is not finite and strictly increasing after sorting.", "markers": []}
-    marker_table = next((item for item in markers
-        if item.get("ambiguous_rows", 0) == 0
-        and "TVDSS" in item.get("declared_columns", [])
-        and item.get("declared_units", [])[item["declared_columns"].index("TVDSS")] == "m"), None)
+    def has_tvdss_metres(item):
+        columns = item.get("declared_columns", [])
+        units = item.get("declared_units", [])
+        if item.get("ambiguous_rows", 0) or "TVDSS" not in columns:
+            return False
+        index = columns.index("TVDSS")
+        return len(units) > index and units[index] == "m"
+
+    marker_table = next((item for item in markers if has_tvdss_metres(item)), None)
     if marker_table is None:
         return {"status": "unavailable", "reason": "No unambiguous marker table with source-declared TVDSS in metres; MDKB values are not substituted.", "markers": []}
     columns = marker_table["declared_columns"]
