@@ -28,6 +28,11 @@ from reservoir_time_machine.visualization.preliminary import render_preliminary
 from reservoir_time_machine.analysis.registry import load_registry
 from reservoir_time_machine.analysis.full_field_registry import load_full_field_registry
 from reservoir_time_machine.analysis.stage3_registry import load_stage3_registry
+from reservoir_time_machine.analysis.recovery_intelligence import (
+    default_investigation_id,
+    investigation_records,
+    select_investigation,
+)
 from reservoir_time_machine.analysis.technical_report import report_markdown
 from reservoir_time_machine.visualization.presentation import select_entry,render_presentation
 import json,re
@@ -176,10 +181,19 @@ def _jump_to_finding(location):
     st.session_state['shared_inline'], st.session_state['shared_crossline'], st.session_state['shared_sample'] = location
 
 
+def _select_stage3_finding(finding_id, location_by_id):
+    """Keep the finding ID and all source-grid view coordinates synchronized."""
+    location = location_by_id.get(finding_id)
+    if location is None:
+        return
+    st.session_state["selected_finding_id"] = finding_id
+    st.session_state["stage3_finding_selection"] = finding_id
+    _jump_to_finding(location)
+
+
 def _jump_to_stage3_selection(selection_key, location_by_id):
     selected_id = st.session_state.get(selection_key)
-    if selected_id in location_by_id:
-        _jump_to_finding(location_by_id[selected_id])
+    _select_stage3_finding(selected_id, location_by_id)
 
 
 def bounded_ml_evidence(allow_external=False):
@@ -248,6 +262,108 @@ def _missing_overlay_trace(mask: np.ndarray, max_axis: int = 700,
         zmin=0, zmax=1, opacity=.9, showscale=False, name="Missing trace coverage",
         hovertemplate=f"Missing trace in display bin<br>{x_name} %{{x}}<br>{y_name} %{{y}}<extra></extra>",
     )
+
+
+def _render_finding_views(finding, *, baseline, monitor, missing_mask, inline_ids,
+                          crossline_ids, dataset_identity, run_id="stage3-selection"):
+    """Render bounded, synchronized slices around the selected component bounds."""
+    il, xl, sample_index = map(int, finding["array_location"])
+    extent = finding.get("extent", [[il, il], [xl, xl], [sample_index, sample_index]])
+    i0 = max(0, int(extent[0][0]) - 24)
+    i1 = min(baseline.shape[0], int(extent[0][1]) + 25)
+    x0 = max(0, int(extent[1][0]) - 24)
+    x1 = min(baseline.shape[1], int(extent[1][1]) + 25)
+    s0 = max(0, int(extent[2][0]) - 24)
+    s1 = min(baseline.shape[2], int(extent[2][1]) + 25)
+    if i0 >= i1 or x0 >= x1 or not 0 <= sample_index < baseline.shape[2]:
+        st.error("The selected finding extent is outside the loaded source grid.")
+        return
+
+    views = {
+        "Sample plane": (baseline[i0:i1, x0:x1, sample_index],
+                         monitor[i0:i1, x0:x1, sample_index],
+                         missing_mask[i0:i1, x0:x1],
+                         np.asarray(crossline_ids[x0:x1]), np.asarray(inline_ids[i0:i1]),
+                         "SEG-Y Crossline ID", "SEG-Y Inline ID", "sample"),
+        "Selected inline": (baseline[il, x0:x1, s0:s1].T,
+                            monitor[il, x0:x1, s0:s1].T,
+                            np.broadcast_to(missing_mask[il, x0:x1][None, :], (s1-s0, x1-x0)),
+                            np.asarray(crossline_ids[x0:x1]), np.arange(s0, s1),
+                            "SEG-Y Crossline ID", "Sample index", "inline"),
+        "Selected crossline": (baseline[i0:i1, xl, s0:s1].T,
+                               monitor[i0:i1, xl, s0:s1].T,
+                               np.broadcast_to(missing_mask[i0:i1, xl][None, :], (s1-s0, i1-i0)),
+                               np.asarray(inline_ids[i0:i1]), np.arange(s0, s1),
+                               "SEG-Y Inline ID", "Sample index", "crossline"),
+    }
+    st.markdown(f"**SEG-Y IL {int(inline_ids[il])} · XL {int(crossline_ids[xl])} · sample index {sample_index}**")
+    st.caption("All views use the selected finding. Source coordinates are preserved; sample origin/domain and physical registration are unverified.")
+    tabs = st.tabs(list(views))
+    for tab, (name, (bview, mview, missing_view, xs, ys, xlabel, ylabel, orientation)) in zip(tabs, views.items()):
+        with tab:
+            dview = np.subtract(mview, bview, out=np.full(np.shape(bview), np.nan),
+                                where=np.isfinite(bview) & np.isfinite(mview))
+            joint = np.concatenate((np.abs(bview[np.isfinite(bview)]),
+                                    np.abs(mview[np.isfinite(mview)])))
+            amp_limit = max(float(np.percentile(joint, 99)) if joint.size else 1.0, 1e-12)
+            finite_diff = np.abs(dview[np.isfinite(dview)])
+            diff_limit = max(float(np.percentile(finite_diff, 99)) if finite_diff.size else 1.0, 1e-12)
+            if orientation == "sample":
+                attrs = cached_tile_attributes(dataset_identity, run_id, sample_index,
+                    (i0, i1, x0, x1), baseline[i0:i1, x0:x1, :], monitor[i0:i1, x0:x1, :])
+                overlay_x0, overlay_x1 = int(crossline_ids[int(extent[1][0])]), int(crossline_ids[int(extent[1][1])])
+                overlay_y0, overlay_y1 = int(inline_ids[int(extent[0][0])]), int(inline_ids[int(extent[0][1])])
+            elif orientation == "inline":
+                overlay_x0, overlay_x1 = int(crossline_ids[int(extent[1][0])]), int(crossline_ids[int(extent[1][1])])
+                overlay_y0, overlay_y1 = int(extent[2][0]), int(extent[2][1])
+            else:
+                overlay_x0, overlay_x1 = int(inline_ids[int(extent[0][0])]), int(inline_ids[int(extent[0][1])])
+                overlay_y0, overlay_y1 = int(extent[2][0]), int(extent[2][1])
+            charts = st.columns(3)
+            for col, values, title, limit, scale in (
+                (charts[0], bview, "1995 Baseline", amp_limit, "RdBu"),
+                (charts[1], mview, "2006 Monitor", amp_limit, "RdBu"),
+                (charts[2], dview, "Monitor − Baseline", diff_limit, "RdBu"),
+            ):
+                shown = display_slice(values, max_axis=700)
+                row_stride = max(1, int(np.ceil(values.shape[0] / 700)))
+                col_stride = max(1, int(np.ceil(values.shape[1] / 700)))
+                fig = go.Figure(go.Heatmap(z=shown, x=xs[::col_stride], y=ys[::row_stride],
+                    colorscale=scale, zmin=-limit, zmax=limit,
+                    zmid=0 if title == "Monitor − Baseline" else None,
+                    colorbar={"title": "Difference" if title == "Monitor − Baseline" else "Amplitude"}))
+                if title == "Monitor − Baseline":
+                    fig.add_shape(type="rect", x0=overlay_x0, x1=overlay_x1,
+                        y0=overlay_y0, y1=overlay_y1,
+                        line={"color": "#31edc2", "width": 2})
+                if missing_view is not None:
+                    missing_display = display_mask(missing_view, max_axis=700)
+                    fig.add_trace(go.Heatmap(z=np.where(missing_display, 1.0, np.nan),
+                        x=xs[::col_stride], y=ys[::row_stride],
+                        colorscale=[[0, "rgba(0,0,0,0)"], [1, "#c6c6c6"]],
+                        zmin=0, zmax=1, opacity=.72, showscale=False,
+                        name="Missing paired trace coverage"))
+                fig.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
+                    plot_bgcolor="#101719", font={"color": "white"}, title=title,
+                    xaxis_title=xlabel, yaxis_title=ylabel, height=390)
+                col.plotly_chart(fig, use_container_width=True, theme=None)
+            if orientation == "sample":
+                support = np.asarray(attrs.paired_sample_count)
+                nrms = np.asarray(attrs.nrms)
+                quality = st.columns(2)
+                for col, values, title, maximum, palette in (
+                    (quality[0], nrms, "9-sample NRMS (%)", None, "Viridis"),
+                    (quality[1], support, "Paired support / 9", 9, "Viridis"),
+                ):
+                    col.plotly_chart(go.Figure(go.Heatmap(z=display_slice(values, max_axis=700),
+                        x=np.asarray(crossline_ids[x0:x1])[::max(1, int(np.ceil(values.shape[1] / 700)))],
+                        y=np.asarray(inline_ids[i0:i1])[::max(1, int(np.ceil(values.shape[0] / 700)))],
+                        colorscale=palette, zmin=0, zmax=maximum,
+                        colorbar={"title": title})).update_layout(template="plotly_dark",
+                        paper_bgcolor="#080d0e", plot_bgcolor="#101719", font={"color": "white"},
+                        title=title, xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID",
+                        height=330), use_container_width=True, theme=None)
+                st.caption("NRMS and support are calculated on the displayed spatial crop only, from finite paired samples. The turquoise outline is the component bounding extent, not exact membership.")
 
 
 cache_directory = (settings.cache_directory if settings.cache_directory is not None
@@ -334,6 +450,7 @@ def select_full_field_entry(entries,offset=0):
         current=st.session_state.get('registry_selection',ids[0]);index=ids.index(current) if current in ids else 0
         item=entries[(index+offset)%len(ids)]
     st.session_state['registry_selection']=item['id']
+    st.session_state['selected_finding_id']=item['id']
     st.session_state['selected_preliminary_finding']={**item['finding'],'dataset_id':item['finding']['source_identity']}
     for key,value in zip(('shared_inline','shared_crossline','shared_sample'),item['finding']['array_location']):
         st.session_state[key]=value
@@ -404,16 +521,34 @@ if stage3_dir_value:
             tuple(map(int, inline_header_ids)), tuple(map(int, crossline_header_ids)))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         stage3_registry_error = type(exc).__name__
-if stage3_registry and st.session_state.get("workspace_page") == "Recovery intelligence":
-    stage3_locations = {item["finding"]["id"]: item["finding"]["array_location"]
-                        for item in stage3_registry["qc_follow_up_actions"]}
-    if not stage3_locations:
-        stage3_locations = {item["id"]: item["array_location"]
-                            for item in stage3_registry["historical_findings"]}
-    selection_key = "stage3_action_selection" if stage3_registry["qc_follow_up_actions"] else "stage3_discovery_selection"
-    selected_stage3_id = st.session_state.get(selection_key, next(iter(stage3_locations), None))
-    if selected_stage3_id in stage3_locations:
-        _jump_to_finding(stage3_locations[selected_stage3_id])
+stage3_investigations = investigation_records(stage3_registry) if stage3_registry else []
+stage3_locations = {
+    item["id"]: item["finding"]["array_location"] for item in stage3_investigations
+}
+selected_investigation = None
+if stage3_investigations:
+    stage3_ids = set(stage3_locations)
+    selected_id = st.session_state.get("selected_finding_id")
+    if selected_id not in stage3_ids:
+        selected_id = default_investigation_id(stage3_investigations)
+    st.session_state["selected_finding_id"] = selected_id
+    if st.session_state.get("stage3_finding_selection") != selected_id:
+        st.session_state["stage3_finding_selection"] = selected_id
+    selected_investigation = select_investigation(stage3_registry, selected_id)
+elif full_field_registry and field_entry:
+    selected_investigation = {"id": field_finding["id"], "kind": "full_field_screening",
+                              "finding": field_finding}
+
+# A selected scientific record owns the synchronized source location. Manual
+# navigation is available only on the separately named Expert diagnostics page.
+if selected_investigation:
+    selection_id = selected_investigation["id"]
+    if st.session_state.get("last_synced_finding_id") != selection_id:
+        finding = selected_investigation["finding"]
+        location = finding.get("array_location", finding.get("representative"))
+        if location is not None:
+            _jump_to_finding(location)
+        st.session_state["last_synced_finding_id"] = selection_id
 if registry and registry['entries']:
     ids=[e['id'] for e in registry['entries']]
     pending=st.session_state.pop('pending_registry_selection',None)
@@ -425,6 +560,14 @@ if registry and registry['entries']:
         st.session_state['registry_selection']=st.session_state['preliminary_choice']
     entry=next(e for e in registry['entries'] if e['id']==st.session_state['registry_selection'])
     guided_result,guided_finding=entry['result'],entry['finding']
+    selected_investigation = {"id": guided_finding["id"], "kind": "bounded_screening",
+                              "finding": guided_finding}
+    st.session_state["selected_finding_id"] = guided_finding["id"]
+    if st.session_state.get("last_synced_finding_id") != guided_finding["id"]:
+        location = (guided_finding["array_location"] if "array_location" in guided_finding
+                    else guided_finding["representative"])
+        _jump_to_finding(location)
+        st.session_state["last_synced_finding_id"] = guided_finding["id"]
     if st.session_state['shared_sample']!=guided_finding['sample']:
         # Expert navigation may move off the finding; its report remains explicitly scoped.
         pass
@@ -459,9 +602,10 @@ if qc_artifact_path.is_file():
 
 with st.sidebar:
     st.header("Workspace")
-    page = st.radio("Workspace", ["Overview and QC", "3D explorer", "4D comparison",
-                                   "Change detection", "Survey transition", "Well inventory", "Evidence explanation",
-                                   "Recovery intelligence"],
+    page = st.radio("Workspace", ["Reservoir Command Center", "4D comparison", "3D discovery map", "3D explorer",
+                                   "Recovery intelligence", "Change detection", "Overview and QC",
+                                   "Survey transition", "Well inventory", "Evidence explanation",
+                                   "Expert diagnostics"], index=0,
                     label_visibility="collapsed", key="workspace_page")
     if full_field_registry and full_field_registry['entries']:
         current=field_entry
@@ -478,13 +622,18 @@ with st.sidebar:
         nav[0].button('Previous finding',on_click=select_entry,args=(registry['entries'],-1))
         nav[1].button('Next finding',on_click=select_entry,args=(registry['entries'],1))
         st.button('Return to automatic focus',on_click=select_entry,args=(registry['entries'],))
-    if page != "4D comparison":
-        with st.expander("Advanced Exploration", expanded=False):
-            sample = st.slider("Sample Index", 0, baseline.shape[2]-1, key="shared_sample")
-            inline = st.slider("Inline index", 0, baseline.shape[0]-1, key="shared_inline")
-            crossline = st.slider("Crossline index", 0, baseline.shape[1]-1, key="shared_crossline")
+    if page == "Expert diagnostics":
+        with st.expander("Expert-only manual grid navigation", expanded=True):
+            sample = st.slider("Sample array index", 0, baseline.shape[2]-1, key="shared_sample")
+            inline = st.slider("Inline array index", 0, baseline.shape[0]-1, key="shared_inline")
+            crossline = st.slider("Crossline array index", 0, baseline.shape[1]-1, key="shared_crossline")
             color_scale = st.selectbox("Seismic colour scale", ["RdBu", "Viridis", "Cividis", "Turbo"], index=0)
-            st.caption("Selections are grid indices. Sample-domain origin and physical registration are unverified.")
+            st.caption("Expert diagnostic mode only. Values are array indices; sample origin and physical registration are unverified.")
+    else:
+        inline = int(st.session_state.get("shared_inline", baseline.shape[0] // 2))
+        crossline = int(st.session_state.get("shared_crossline", baseline.shape[1] // 2))
+        sample = int(st.session_state.get("shared_sample", baseline.shape[2] // 2))
+        color_scale = "RdBu"
 
 if page != "4D comparison" and not availability["well_inventory_available"]:
     st.warning("The well-list spreadsheet is missing. Seismic-only views remain available; well context is not inferred.")
@@ -528,7 +677,7 @@ if saved_finding and saved_finding.get('dataset_id') == dataset_cache_identity:
 def cached_technical_report(registry_id,_registry):
     return report_markdown(_registry)
 
-if page != "Overview and QC":
+if page not in ("Overview and QC", "Reservoir Command Center"):
     if registry:
         c=registry['body']['coverage']
         st.caption(f"Coverage {c['completed_tiles']}/{c['planned_tiles']} tiles · local ranking only")
@@ -547,7 +696,91 @@ if page != "Overview and QC":
         st.info('No completed valid findings registry is available. Expert seismic views remain available; automatic ML analysis does not run on page load.')
         st.caption('Coverage: N/A · no completed findings registry is available.')
 
-if page == "Overview and QC":
+if page == "Reservoir Command Center":
+    page_header("Angsi Field · 4D Reservoir Intelligence",
+                "Baseline 1995 → Monitor 2006 · evidence-led surveillance and recovery investigation")
+    if stage3_registry:
+        assessment = stage3_registry["assessment"]
+        consensus = assessment.get("consensus", {})
+        candidates = stage3_investigations
+        selected = selected_investigation
+        st.markdown("### WHAT IS HAPPENING IN THE RESERVOIR?")
+        st.write("The completed paired survey arrays contain spatially varying seismic differences. These are observations on matched Baseline-grid trace keys; cause and physical 4D repeatability remain unverified.")
+        st.markdown("### WHICH CHANGES MATTER MOST?")
+        st.write("The archived Stage 2 top ten are MAD-only screening candidates. Three-detector consensus is limited and concentrated near the crossline survey boundary; it is not independent geological confirmation.")
+        st.markdown("### WHERE SHOULD RECOVERY TEAMS INVESTIGATE NEXT?")
+        st.write("No recovery opportunity is currently verified. The default focus is the highest-ranked QC follow-up action, which may resolve uncertainty before reservoir or production decisions.")
+        metric = st.columns(4)
+        metric[0].metric("Valid full-field positions", "1.604B", help="Completed Stage 1/2B report; finite paired positions.")
+        metric[1].metric("Classical ML consensus voxels", f"{int(consensus.get('voxel_count', 0)):,}", help="Mahalanobis + PCA + GMM flags; Isolation Forest flags absent in this set.")
+        metric[2].metric("Verified reservoir ties", "0", help="No finding has a verified well/horizon/sample association.")
+        metric[3].metric("Recovery opportunities", f"{len(stage3_registry['recovery_opportunities'])}", help="Only independently supported opportunities qualify.")
+        st.warning("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only. Sample origin and well-to-seismic tie remain unresolved.")
+
+        if selected:
+            finding = selected["finding"]
+            if selected["kind"] == "qc_follow_up":
+                st.markdown(f"## Priority QC investigation {selected['queue_rank']} · {selected['id']}")
+                st.caption("This ranks a validation action, not a hydrocarbon location or recovery probability.")
+                st.markdown("**What happened?** " + str(selected["observation"]))
+                st.markdown("**Why it matters:** the stored arrays differ numerically, but repeatability/registration and processing explanations must be resolved before geological attribution.")
+                st.markdown(f"**Seismic observation confidence:** {selected['observation_confidence']}")
+                st.markdown(f"**Geological interpretation confidence:** {selected['geological_confidence']}")
+                if selected["alternatives"]:
+                    st.markdown("**Alternative explanations:** " + " ".join(selected["alternatives"]))
+                st.markdown("**Recommended next actions**")
+                for discipline, action in selected["actions"].items():
+                    st.markdown(f"- **{discipline.replace('_', ' ').title()}:** {action}")
+                st.info(selected["recovery_chance_of_success"])
+            else:
+                st.markdown(f"## Selected historical screening record · {selected['id']}")
+                st.caption("Historical Stage 2 order and Stage 3 QC evidence are retained; this is not a recovery-target ranking.")
+                st.markdown("**Observed:** " + str(selected["observation"]))
+                st.markdown(f"**Observation confidence:** {selected['observation_confidence']}")
+                st.markdown(f"**Geological interpretation:** {selected['geological_confidence']}")
+            action_ids = {item["finding"]["id"] for item in stage3_registry["qc_follow_up_actions"]}
+            selectable = [item for item in candidates if item["id"] in action_ids]
+            if selectable:
+                st.markdown("#### Other ranked QC actions")
+                buttons = st.columns(min(4, len(selectable)))
+                for index, item in enumerate(selectable[:4]):
+                    buttons[index].button(
+                        f"Action {item['queue_rank']} · {item['id'][-6:]}",
+                        key=f"command_action_{item['id']}",
+                        on_click=_select_stage3_finding,
+                        args=(item["id"], stage3_locations),
+                        use_container_width=True,
+                    )
+            _render_finding_views(finding, baseline=baseline, monitor=monitor,
+                missing_mask=paired_missing, inline_ids=inline_header_ids,
+                crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
+                run_id=f"command-{selected['id']}")
+        else:
+            st.info("No validated investigation record is present. The homepage will not choose a midpoint or invent a target.")
+        with st.expander("Eight-method and evidence status"):
+            st.dataframe([
+                {"Method": "Mahalanobis distance", "Angsi status": "Full-field score maps completed; historical top ten has zero flags"},
+                {"Method": "PCA reconstruction", "Angsi status": "Full-field score maps completed; historical top ten has zero flags"},
+                {"Method": "Isolation Forest", "Angsi status": "Full-field score maps completed; no threshold flags in the historical top ten or consensus set"},
+                {"Method": "Gaussian Mixture Model", "Angsi status": "Full-field score maps completed; historical top ten has zero flags"},
+                {"Method": "MAD screening", "Angsi status": "Completed statistical screen; all ten historical findings are MAD-only"},
+                {"Method": "Bayesian evidence fusion", "Angsi status": "Code available; no validated Angsi likelihood calibration or posterior"},
+                {"Method": "3D convolutional autoencoder", "Angsi status": "Architecture/trainer available; no trained or validated Angsi checkpoint"},
+                {"Method": "Siamese 3D CNN", "Angsi status": "Architecture/trainer available; no trained or validated Angsi checkpoint"},
+                {"Method": "Edge and coverage QC", "Angsi status": "Completed Stage 2/3 QC; consensus remains edge-sensitive"},
+            ], use_container_width=True, hide_index=True)
+    elif full_field_registry and field_finding:
+        st.info("Validated full-field findings registry loaded. The Stage 3 QC action package is not configured; this record is shown as seismic screening, not recovery intelligence.")
+        bounded_ml_evidence()
+    elif registry and guided_result is not None:
+        st.info("Only bounded preliminary results are available. They are not global priorities.")
+        render_page_report(guided_result, guided_finding, well_context, page, discovery,
+            shared_interpretation=entry["interpretation"], inline_ids=inline_header_ids,
+            crossline_ids=crossline_header_ids, grid_shape=baseline.shape[:2])
+    else:
+        st.info("No completed, validated findings registry is configured. This page does not select arbitrary seismic slices or run full-volume analysis.")
+
+elif page == "Overview and QC":
     page_header("Survey overview & QC", "Coverage, measured data quality, and preliminary finding evidence.")
     section("Scientific readiness")
     st.markdown(
@@ -690,8 +923,88 @@ if page == "Overview and QC":
             st.caption('Run bounded analysis through the configured HPC workflow. Opening this page does not start analysis.')
             template=Path(__file__).resolve().parent/'config/hpc/phase3_discovery.slurm'
             if template.is_file():st.download_button('Download bounded analysis template',template.read_text(),file_name='phase3_discovery.slurm')
+elif page == "3D discovery map":
+    page_header("3D investigation map", "Click a validated finding marker to synchronize the selected investigation across the workspace.")
+    st.caption("This map shows representative component locations and their bounding boxes in Baseline-grid array coordinates. It is not a geographic CRS or a reconstructed reservoir surface. Only the Stage 3 ten historical screening records are mapped; the full 260,401-candidate catalogue is not being plotted in the browser.")
+    map_records = stage3_registry["historical_findings"] if stage3_registry else []
+    if not map_records and full_field_registry:
+        map_records = [item["finding"] for item in full_field_registry["entries"]]
+    if map_records:
+        action_ids = {item["finding"]["id"] for item in (stage3_registry or {}).get("qc_follow_up_actions", [])}
+        locations = {item["id"]: item["array_location"] for item in map_records}
+        custom = []
+        colors = []
+        symbols = []
+        for item in map_records:
+            array_location = item["array_location"]
+            custom.append([
+                item["id"], int(item.get("inline_id", inline_header_ids[array_location[0]])),
+                int(item.get("crossline_id", crossline_header_ids[array_location[1]])),
+                int(array_location[2]), int(item.get("component_voxels", 0)),
+                float(item.get("edge_risk", item.get("edge_artifact_risk", 0.0))),
+                int(item.get("detector_threshold_flagged_voxels", 0)),
+            ])
+            colors.append(float(item.get("edge_risk", item.get("edge_artifact_risk", 0.0))))
+            symbols.append("diamond" if item["id"] in action_ids else "circle")
+        fig = go.Figure(go.Scatter3d(
+            x=[item["array_location"][1] for item in map_records],
+            y=[item["array_location"][0] for item in map_records],
+            z=[item["array_location"][2] for item in map_records],
+            customdata=custom, mode="markers+text",
+            text=[f"{item['rank']}" for item in map_records], textposition="top center",
+            marker={"size": 8, "color": colors, "colorscale": "Turbo", "cmin": 0, "cmax": 1,
+                    "colorbar": {"title": "Edge risk"}, "symbol": symbols,
+                    "line": {"color": "#f4ffff", "width": 1}},
+            hovertemplate=("%{customdata[0]}<br>SEG-Y IL %{customdata[1]} · XL %{customdata[2]}"
+                           "<br>Sample index %{customdata[3]}<br>Component voxels %{customdata[4]}"
+                           "<br>Edge risk %{customdata[5]:.2f}<br>Classical detector flags %{customdata[6]}"
+                           "<extra></extra>"),
+            name="Stage 3 finding locations"))
+        selected = next((item for item in map_records
+                         if item["id"] == st.session_state.get("selected_finding_id")), map_records[0])
+        extent = selected.get("extent")
+        if extent and len(extent) == 3:
+            il0, il1 = map(int, extent[0]); xl0, xl1 = map(int, extent[1]); s0, s1 = map(int, extent[2])
+            corners = [(x, y, z) for x in (xl0, xl1) for y in (il0, il1) for z in (s0, s1)]
+            edges = ((0,1),(0,2),(0,4),(1,3),(1,5),(2,3),(2,6),(3,7),(4,5),(4,6),(5,7),(6,7))
+            bx, by, bz = [], [], []
+            for a, b in edges:
+                bx.extend((corners[a][0], corners[b][0], None))
+                by.extend((corners[a][1], corners[b][1], None))
+                bz.extend((corners[a][2], corners[b][2], None))
+            fig.add_trace(go.Scatter3d(x=bx, y=by, z=bz, mode="lines",
+                line={"color": "#31edc2", "width": 5}, name="Selected extent bounding box",
+                hoverinfo="skip"))
+        fig.update_layout(template="plotly_dark", paper_bgcolor="#080d0e", plot_bgcolor="#101719",
+            font={"color": "white"}, height=640, margin={"l": 0, "r": 0, "t": 50, "b": 0},
+            scene={"xaxis_title": "Crossline array index", "yaxis_title": "Inline array index",
+                   "zaxis_title": "Sample array index", "aspectmode": "data"},
+            legend={"orientation": "h"})
+        event = st.plotly_chart(fig, use_container_width=True, theme=None,
+            config={"scrollZoom": True, "displaylogo": False},
+            on_select="rerun", selection_mode="points", key="stage3_discovery_map")
+        points = getattr(getattr(event, "selection", None), "points", []) or []
+        if points:
+            point_index = points[-1].get("point_index", points[-1].get("pointIndex"))
+            curve_index = points[-1].get("curve_number", points[-1].get("curveNumber", 0))
+            if curve_index == 0 and isinstance(point_index, int) and 0 <= point_index < len(map_records):
+                selected_id = map_records[point_index]["id"]
+                _select_stage3_finding(selected_id, locations)
+                selected = next(item for item in map_records if item["id"] == selected_id)
+        chosen = selected
+        st.markdown(f"**Selected {chosen['id']}** · SEG-Y IL {int(chosen.get('inline_id', inline_header_ids[chosen['array_location'][0]]))} · XL {int(chosen.get('crossline_id', crossline_header_ids[chosen['array_location'][1]]))} · sample index {int(chosen['array_location'][2])}")
+        st.caption(f"Bounding extent only: inline {chosen['extent'][0]} · crossline {chosen['extent'][1]} · sample index {chosen['extent'][2]}. Exact component-membership voxels are not exposed by the validated Stage 3 package.")
+        _render_finding_views(chosen, baseline=baseline, monitor=monitor,
+            missing_mask=paired_missing, inline_ids=inline_header_ids,
+            crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
+            run_id=f"3d-map-{chosen['id']}")
+    else:
+        st.info("No validated finding locations are available for a 3D map. No arbitrary voxel cloud is generated.")
 elif page == "3D explorer":
     page_header("3D seismic explorer", "Linked inline, crossline, and sample sections intersect at the shared selected location.")
+    if selected_investigation is None:
+        st.info("No validated finding is selected. The application will not open arbitrary midpoint seismic slices. Load a completed finding registry or use Expert diagnostics for explicitly manual inspection.")
+        st.stop()
     st.caption("Drag to rotate; choose Pan in the Plotly mode bar to pan; use scroll or mode bar controls to zoom and reset the camera. Planes are display-strided; missing trace bins are conservatively shown as gaps; source arrays and analytical data remain full resolution.")
     baseline_display, monitor_display = display_volume(baseline, 36), display_volume(monitor, 36)
     limit = max(float(np.nanpercentile(np.abs(baseline_display), 99)), float(np.nanpercentile(np.abs(monitor_display), 99)))
@@ -732,31 +1045,27 @@ elif page == "4D comparison":
     else:
         st.info(registration_status)
     st.caption("Differences do not establish a geological cause or remaining hydrocarbons.")
+    if selected_investigation is None:
+        st.info("No validated finding is selected. The application will not open an arbitrary survey midpoint. Load a completed finding registry or use Expert diagnostics for manual inspection.")
+        st.stop()
     view = st.radio("Synchronized section", ["Sample plane", "Inline section", "Crossline section"], horizontal=True)
-    with st.expander("Advanced Exploration",expanded=False):
-        controls = st.columns(4)
-        with controls[0]:
-            sample = st.slider("Sample Index", 0, baseline.shape[2]-1, key="shared_sample")
-        with controls[1]:
-            inline = st.slider("Inline index", 0, baseline.shape[0]-1, key="shared_inline")
-        with controls[2]:
-            crossline = st.slider("Crossline index", 0, baseline.shape[1]-1, key="shared_crossline")
-        with controls[3]:
-            color_scale = st.selectbox("Seismic colour scale", ["RdBu", "Viridis", "Cividis", "Turbo"], index=0)
-    st.caption("Selections are Baseline-grid array indices. Sample-domain origin is unverified; Sample Index is not physical time or depth.")
+    st.caption("The selected investigation supplies the location. Array indices remain available in the evidence panel; sample origin and physical time/depth are unverified.")
     point_attrs=cached_point_attributes(dataset_cache_identity,inline,crossline,sample,baseline,monitor)
     i0,i1=max(0,inline-48),min(baseline.shape[0],inline+49)
     x0,x1=max(0,crossline-48),min(baseline.shape[1],crossline+49)
     s0,s1=max(0,sample-48),min(baseline.shape[2],sample+49)
     if view == "Sample plane":
         bview,mview=baseline[i0:i1,x0:x1,sample],monitor[i0:i1,x0:x1,sample]
-        missing_view=paired_missing[i0:i1,x0:x1];x_title,y_title="Crossline index","Inline index";x_origin,y_origin=x0,i0
+        missing_view=paired_missing[i0:i1,x0:x1];x_title,y_title="SEG-Y Crossline ID","SEG-Y Inline ID"
+        xs,ys=np.asarray(crossline_header_ids[x0:x1]),np.asarray(inline_header_ids[i0:i1])
     elif view == "Inline section":
         bview,mview=baseline[inline,x0:x1,s0:s1].T,monitor[inline,x0:x1,s0:s1].T
-        missing_view=np.broadcast_to(paired_missing[inline,x0:x1],bview.shape);x_title,y_title="Crossline index","Sample Index";x_origin,y_origin=x0,s0
+        missing_view=np.broadcast_to(paired_missing[inline,x0:x1],bview.shape);x_title,y_title="SEG-Y Crossline ID","Sample index"
+        xs,ys=np.asarray(crossline_header_ids[x0:x1]),np.arange(s0,s1)
     else:
         bview,mview=baseline[i0:i1,crossline,s0:s1].T,monitor[i0:i1,crossline,s0:s1].T
-        missing_view=np.broadcast_to(paired_missing[i0:i1,crossline],bview.shape);x_title,y_title="Inline index","Sample Index";x_origin,y_origin=i0,s0
+        missing_view=np.broadcast_to(paired_missing[i0:i1,crossline],bview.shape);x_title,y_title="SEG-Y Inline ID","Sample index"
+        xs,ys=np.asarray(inline_header_ids[i0:i1]),np.arange(s0,s1)
     dview=mview-bview
     finite=np.concatenate((np.abs(bview[np.isfinite(bview)]),np.abs(mview[np.isfinite(mview)])))
     shared_limit=max(float(np.percentile(finite,99)) if finite.size else 1.,1e-12)
@@ -770,15 +1079,19 @@ elif page == "4D comparison":
         shown = display_slice(values, max_axis=700)
         row_stride = max(1, int(np.ceil(values.shape[0] / 700)))
         col_stride = max(1, int(np.ceil(values.shape[1] / 700)))
-        xs = np.arange(0, values.shape[1], col_stride)+x_origin
-        ys = np.arange(0, values.shape[0], row_stride)+y_origin
         section_fig = go.Figure(go.Heatmap(z=shown, x=xs, y=ys, colorscale=scale, zmin=-limit_value,
             zmax=limit_value, zmid=0, colorbar={"title": "Amplitude" if title != "MONITOR − BASELINE" else "Difference"}))
         if missing_view is not None:
-            section_fig.add_trace(_missing_overlay_trace(missing_view, x_name=x_title, y_name=y_title,x_offset=x_origin,y_offset=y_origin))
+            missing_display = display_mask(missing_view, max_axis=700)
+            section_fig.add_trace(go.Heatmap(z=np.where(missing_display, 1.0, np.nan),
+                x=xs[::col_stride], y=ys[::row_stride],
+                colorscale=[[0, "rgba(0,0,0,0)"], [1, "#c6c6c6"]],
+                zmin=0, zmax=1, opacity=.72, showscale=False,
+                name="Missing paired trace coverage"))
         col.plotly_chart(section_fig.update_layout(
             title=title, xaxis_title=x_title, yaxis_title=y_title, height=540), use_container_width=True)
-    section(f"Selected point · Inline {inline} · Crossline {crossline} · Sample Index {sample}")
+    inline_id = int(inline_header_ids[inline]); crossline_id = int(crossline_header_ids[crossline])
+    section(f"Selected investigation · SEG-Y IL {inline_id} · XL {crossline_id} · Sample index {sample}")
     base_amp, mon_amp = float(baseline[inline, crossline, sample]), float(monitor[inline, crossline, sample])
     metric_data = (
         ("Baseline amplitude",f"{base_amp:.5g}" if np.isfinite(base_amp) else "N/A"),
@@ -819,7 +1132,26 @@ elif page == "4D comparison":
         st.write("Evidence explanation provides local grounded summaries for bounded findings. External Gemma interpretation requires explicit authorization there; this page makes no external request or geological inference.")
 
 elif page == "Change detection":
-    page_header("Change detection", "Locate unusually large paired amplitude differences on the selected sample plane.")
+    page_header("Change detection", "Completed full-field screening evidence and model disagreement.")
+    if stage3_registry:
+        st.caption("The original Stage 2 ranking is preserved as historical screening. It is not a recovery ranking.")
+        st.markdown("- All ten archived priority findings are MAD-only.\n- None has threshold-flagged voxels from the four classical detectors.\n- 3,563 voxels have Mahalanobis + PCA + GMM flags; this set is edge-concentrated and not an independent geological confirmation.")
+        st.dataframe([{"Stage 2 rank": item["rank"], "finding": item["id"],
+            "SEG-Y IL": item["inline_id"], "SEG-Y XL": item["crossline_id"],
+            "sample index": item["sample_index"], "MAD only": item["mad_only"],
+            "edge risk": item["edge_risk"], "voxel count": item["component_voxels"]}
+            for item in stage3_registry["historical_findings"]], use_container_width=True, hide_index=True)
+        st.info("No full-field recovery inference is validated. Use Recovery intelligence for QC/surveillance actions; use Expert diagnostics only for bounded manual sensitivity checks.")
+    elif full_field_registry:
+        bounded_ml_evidence()
+    elif registry:
+        bounded_ml_evidence()
+    else:
+        st.info("No completed findings registry is available. No anomaly screening is started by this page.")
+
+elif page == "Expert diagnostics":
+    page_header("Expert diagnostics", "Manual array-index exploration and bounded sensitivity checks for specialist QC only.")
+    st.warning("This diagnostic workspace is separate from the judge-facing command center. Coordinate sliders here are array indices, not physical map coordinates; sample origin and 4D registration remain unverified.")
     with st.expander('Advanced statistical screening'):
         expert=st.checkbox('Run expert full-sample screening',value=False,help='Evaluates the selected full-resolution sample plane; not part of automatic dashboard startup.')
     if not expert:
@@ -1150,10 +1482,9 @@ elif page == "Evidence explanation":
         st.write(well_context)
     if stage3_registry:
         st.markdown("### Saved full-field finding · deterministic evidence explanation")
-        action_findings = [item["finding"] for item in stage3_registry["qc_follow_up_actions"]]
-        candidates = action_findings or stage3_registry["historical_findings"]
-        selected_id = st.session_state.get("stage3_action_selection", candidates[0]["id"])
-        selected_stage3 = next((item for item in candidates if item["id"] == selected_id), candidates[0])
+        selected_stage3 = select_investigation(
+            stage3_registry, st.session_state.get("selected_finding_id", stage3_investigations[0]["id"])
+        )["finding"]
         packet = stage3_finding_packet(selected_stage3, assessment_id=stage3_registry["id"])
         try:
             llm_settings = LLMSettings.from_environment()
@@ -1205,28 +1536,23 @@ else:
         metric_cols[3].metric("Verified reservoir / recovery targets", "0 / 0")
         st.info("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not verified. Sample origin and well-to-seismic tie are unresolved. Findings are seismic screening evidence; they do not establish fluid movement or remaining hydrocarbons.")
 
-        action_ids = [item["finding"]["id"] for item in stage3_registry["qc_follow_up_actions"]]
-        discovery_ids = [item["id"] for item in stage3_registry["historical_findings"]]
         st.markdown("### Which changes matter? · first review the QC action queue")
-        if action_ids:
-            selected_id = st.selectbox("QC follow-up action", action_ids,
-                                       format_func=lambda ident: f"{ident} · review vintage repeatability / acquisition QC",
-                                       key="stage3_action_selection",
-                                       on_change=_jump_to_stage3_selection,
-                                       args=("stage3_action_selection",
-                                             {item["finding"]["id"]: item["finding"]["array_location"]
-                                              for item in stage3_registry["qc_follow_up_actions"]}))
-            selected = next(item["finding"] for item in stage3_registry["qc_follow_up_actions"]
-                            if item["finding"]["id"] == selected_id)
+        selection_ids = [item["id"] for item in stage3_investigations]
+        selected_id = st.selectbox(
+            "Investigation record", selection_ids,
+            format_func=lambda ident: next(
+                (f"QC action {item['queue_rank']} · {ident}" if item["kind"] == "qc_follow_up"
+                 else f"Historical Stage 2 screening · {ident}"
+                 for item in stage3_investigations if item["id"] == ident), ident),
+            key="stage3_finding_selection", on_change=_jump_to_stage3_selection,
+            args=("stage3_finding_selection", stage3_locations),
+        )
+        selected_record = select_investigation(stage3_registry, selected_id)
+        selected = selected_record["finding"]
+        if selected_record["kind"] == "qc_follow_up":
             st.caption("This queue prioritizes technical validation work. It is not a recovery-target ranking.")
         else:
-            selected_id = st.selectbox("Historical Stage 2 discovery", discovery_ids,
-                                       key="stage3_discovery_selection",
-                                       on_change=_jump_to_stage3_selection,
-                                       args=("stage3_discovery_selection",
-                                             {item["id"]: item["array_location"]
-                                              for item in stage3_registry["historical_findings"]}))
-            selected = next(item for item in stage3_registry["historical_findings"] if item["id"] == selected_id)
+            st.caption("Historical Stage 2 screening record; not a recovery-target ranking.")
 
         loc = selected["array_location"]
         il, xl, sample_idx = map(int, loc)

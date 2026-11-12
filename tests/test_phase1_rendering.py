@@ -1,4 +1,4 @@
-"""Seven-page AppTest smoke checks on mathematical arrays, without network calls.
+"""AppTest smoke checks on mathematical arrays, without network calls.
 
 These are not browser, full-volume, or geological tests. Optional dashboard packages
 must be available. Dataset loading and cache identity are replaced in this process.
@@ -49,54 +49,27 @@ class DashboardRenderingTests(unittest.TestCase):
             app = AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'), default_timeout=30).run()
             self.assertEqual(list(app.exception), [])
             overview_text = '\n'.join(v.value for v in app.markdown)
-            self.assertLess(overview_text.index('Survey overview & QC'), overview_text.index('Scientific readiness'))
-            self.assertIn('Physical 4D registration · N/A', overview_text)
-            self.assertNotIn('cause N/A', overview_text)
-            self.assertNotIn('Registration N/A', overview_text)
+            self.assertIn('Angsi Field · 4D Reservoir Intelligence', overview_text)
+            self.assertIn('Angsi Field · 4D Reservoir Intelligence', overview_text)
+            self.assertTrue(any('No completed, validated findings registry' in x.value for x in app.info))
+            self.assertEqual(len(app.slider), 0)
             warning = 'Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.'
             self.assertIn(warning, [x.value for x in app.warning])
-            for page in ['3D explorer', '4D comparison', 'Change detection', 'Survey transition',
-                         'Well inventory', 'Evidence explanation']:
+            for page in ['3D explorer', '3D discovery map', '4D comparison', 'Recovery intelligence',
+                         'Change detection', 'Survey transition', 'Well inventory', 'Evidence explanation',
+                         'Overview and QC']:
                 charts.clear()
                 app.sidebar.radio[0].set_value(page).run()
                 self.assertEqual([e.message for e in app.exception], [], page)
                 self.assertIn(warning, [x.value for x in app.warning], page)
+                self.assertEqual(len(app.slider), 0, f'{page} must not expose manual coordinate sliders')
                 if page == '4D comparison':
-                    # Preserve the reviewed compact UI: controls on the page,
-                    # no duplicate sidebar widgets/header, collapsed evidence.
                     self.assertEqual(len(app.sidebar.slider), 0)
                     self.assertEqual(len(app.sidebar.selectbox), 0)
-                    self.assertEqual([x.label for x in app.slider],
-                                     ['Sample Index', 'Inline index', 'Crossline index'])
-                    panel = next(x for x in app.expander if x.label == 'Evidence · Seismic / Well / ML / AI')
-                    self.assertFalse(panel.proto.expanded)
-                    text = '\n'.join(x.value for x in app.markdown)
-                    for label in ['Seismic evidence', 'Well evidence', 'ML evidence', 'AI evidence']:
-                        self.assertIn(label, text)
-                    self.assertNotIn('<div class="rtm-title">Reservoir Time Machine</div>', text)
-                    self.assertIn('4D comparison · Reservoir Time Machine', text)
-                    # Change controls, inspect all three orientations, and check
-                    # selected-point metrics remain tied to the same source cell.
-                    next(x for x in app.slider if x.label == 'Sample Index').set_value(0)
-                    next(x for x in app.slider if x.label == 'Inline index').set_value(5)
-                    next(x for x in app.slider if x.label == 'Crossline index').set_value(6).run()
-                    from reservoir_time_machine.attributes.difference import calculate_sample_attributes
-                    selected = calculate_sample_attributes(b, m, 0)
-                    for orientation in ['Sample plane', 'Inline section', 'Crossline section']:
-                        charts.clear()
-                        next(x for x in app.radio if x.label == 'Synchronized section').set_value(orientation).run()
-                        self.assertEqual([e.message for e in app.exception], [], orientation)
-                        self.assertIn(warning, [x.value for x in app.warning])
-                        metrics = {x.label: x.value for x in app.metric}
-                        self.assertEqual(metrics['Baseline amplitude'], f'{b[5,6,0]:.5g}')
-                        self.assertEqual(metrics['Windowed NRMS'], f'{selected.nrms[5,6]:.2f}%')
-                        self.assertTrue(any('Window support at selected cell: 5 finite paired samples' in x.value
-                                            for x in app.caption))
-                        baseline_chart = next(fig for fig in charts if fig.layout.title.text == 'BASELINE')
-                        np.testing.assert_array_equal(baseline_chart.data[0].x, baseline_chart.data[1].x)
-                        np.testing.assert_array_equal(baseline_chart.data[0].y, baseline_chart.data[1].y)
-                    next(x for x in app.slider if x.label == 'Sample Index').set_value(9).run()
+                    self.assertTrue(any('will not open an arbitrary survey midpoint' in x.value
+                                        for x in app.info))
                 if page == 'Change detection':
+                    app.sidebar.radio[0].set_value('Expert diagnostics').run()
                     next(v for v in app.checkbox if v.label=='Run expert full-sample screening').check().run()
                     selector = next(x for x in app.selectbox if x.label == 'Inspect connected region')
                     selector.select_index(1).run()

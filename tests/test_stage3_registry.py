@@ -138,6 +138,15 @@ class Stage3RegistryTests(unittest.TestCase):
                 side_effect=AssertionError("Streamlit navigation must not fit models")):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
+        self.assertEqual(app.sidebar.radio[0].value, "Reservoir Command Center")
+        self.assertEqual(len(app.slider), 0, "Judge-facing startup must not expose manual coordinate sliders")
+        self.assertIn("WHAT IS HAPPENING IN THE RESERVOIR?",
+                      " ".join(element.value for element in app.markdown))
+        self.assertEqual(app.session_state["selected_finding_id"],
+                         app.session_state["stage3_finding_selection"])
+        app.sidebar.radio[0].set_value("3D discovery map").run()
+        self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
+        self.assertEqual(len(app.slider), 0)
         app.sidebar.radio[0].set_value("Recovery intelligence").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         text = "\n".join(element.value for element in app.markdown)
