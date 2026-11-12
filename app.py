@@ -21,6 +21,8 @@ from reservoir_time_machine.data_ingest.segy_loader import (
 from reservoir_time_machine.detection.clustering import connected_zones
 from reservoir_time_machine.detection.statistical import statistical_screen
 from reservoir_time_machine.settings import ApplicationSettings, LLMSettings
+from reservoir_time_machine.ai.gemma_copilot import build_copilot_context
+from reservoir_time_machine.visualization.gemma_copilot import render_gemma_copilot
 from reservoir_time_machine.ai.grounding import (stage3_finding_packet, interpret,
     GemmaFindingProvider, explanation_identity, transmission_allowed)
 from reservoir_time_machine.analysis.preliminary import run_preliminary, VERSION as ML_VERSION
@@ -625,7 +627,7 @@ if qc_artifact_path.is_file():
 
 with st.sidebar:
     st.header("Workspace")
-    page = st.radio("Workspace", ["Reservoir Command Center", "4D comparison", "3D discovery map", "3D explorer",
+    page = st.radio("Workspace", ["Reservoir Command Center", "Gemma AI Copilot", "4D comparison", "3D discovery map", "3D explorer",
                                    "Recovery intelligence", "Change detection", "Overview and QC",
                                    "Survey transition", "Well inventory", "Evidence explanation",
                                    "Expert diagnostics"], index=0,
@@ -700,7 +702,7 @@ if saved_finding and saved_finding.get('dataset_id') == dataset_cache_identity:
 def cached_technical_report(registry_id,_registry):
     return report_markdown(_registry)
 
-if page not in ("Overview and QC", "Reservoir Command Center"):
+if page not in ("Overview and QC", "Reservoir Command Center", "Gemma AI Copilot"):
     if registry:
         c=registry['body']['coverage']
         st.caption(f"Coverage {c['completed_tiles']}/{c['planned_tiles']} tiles · local ranking only")
@@ -765,6 +767,10 @@ if page == "Reservoir Command Center":
                         spatial_radius=2, half_window=10, max_lag_samples=4,
                         control_distance_samples=64)
                     scenario_results.append((case, measured))
+        st.session_state["rtm_copilot_records"] = [
+            {"candidate": case, "measurement": result}
+            for case, result in scenario_results
+        ]
         if not scenario_results:
             st.info("No compatible source-local I-100 windows fall within the proposed Baseline header frame. No reservoir interval was invented.")
         else:
@@ -925,6 +931,37 @@ if page == "Reservoir Command Center":
             crossline_ids=crossline_header_ids, grid_shape=baseline.shape[:2])
     else:
         st.info("No completed, validated findings registry is configured. This page does not select arbitrary seismic slices or run full-volume analysis.")
+
+elif page == "Gemma AI Copilot":
+    # The chat uses bounded, checksummed scientific findings. It never scans
+    # the entire seismic cube, runs ML, or passes raw private files to Gemma.
+    _copilot_records = st.session_state.get("rtm_copilot_records", [])
+    _copilot_sha = None
+    _copilot_path = os.environ.get("RTM_CONDITIONAL_I100_EVIDENCE")
+    if _copilot_path and not _copilot_records:
+        try:
+            _copilot_cache_identity, _ = paired_cache_provenance(cache_directory)
+            _copilot_evidence = load_conditional_i100_evidence(
+                _copilot_path, expected_data_identity=_copilot_cache_identity,
+                expected_shape=baseline.shape, inline_ids=inline_header_ids,
+                crossline_ids=crossline_header_ids,
+            )
+            _copilot_records = _copilot_evidence["records"]
+            _copilot_sha = _copilot_evidence["sha256"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            st.warning(
+                "Saved I-100 evidence was not accepted for conversation "
+                f"({type(exc).__name__}); restricted measurements were not loaded."
+            )
+    _copilot_context = build_copilot_context(
+        selected=selected_investigation,
+        scenario_records=_copilot_records,
+        evidence_sha256=_copilot_sha,
+    )
+    _selected_scenario = st.session_state.get("command_conditional_i100_scenario_v2")
+    if _selected_scenario:
+        _copilot_context["selected_scenario"] = str(_selected_scenario)[:120]
+    render_gemma_copilot(_copilot_context)
 
 elif page == "Overview and QC":
     page_header("Survey overview & QC", "Coverage, measured data quality, and preliminary finding evidence.")
