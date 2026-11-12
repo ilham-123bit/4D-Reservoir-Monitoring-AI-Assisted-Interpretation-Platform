@@ -854,11 +854,8 @@ if page == "Reservoir Command Center":
                         spatial_radius=2, half_window=10, max_lag_samples=4,
                         control_distance_samples=64)
                     scenario_results.append((case, measured))
-        st.session_state["rtm_copilot_records"] = [
-            {"candidate": case, "measurement": result}
-            for case, result in scenario_results
-        ]
         if not scenario_results:
+            st.session_state["rtm_copilot_records"] = []
             st.info("No compatible source-local I-100 windows fall within the proposed Baseline header frame. No reservoir interval was invented.")
         else:
             st.warning("Conditional test only: Baseline header coordinates, workbook X/Y frame, sample-zero TWT, well-to-seismic tie and physical 4D registration are not independently verified.")
@@ -893,6 +890,11 @@ if page == "Reservoir Command Center":
                  "Spatial pattern": _local.get("pattern", _local.get("status"))}
                 )
             st.dataframe(_scenario_rows, hide_index=True, width="stretch")
+            st.session_state["rtm_copilot_records"] = [
+                {"candidate": case, "measurement": result,
+                 "local_spatial": _scenario_spatial[conditional_scenario_key(case)]}
+                for case, result in scenario_results
+            ]
             _spatially_distinct = sum(
                 item.get("pattern") in {
                     "selected_region_more_responsive_than_neighborhood",

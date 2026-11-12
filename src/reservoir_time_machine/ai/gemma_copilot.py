@@ -113,6 +113,8 @@ def build_copilot_context(*, selected=None, scenario_records=None, evidence_sha2
             loc = [int(v) for v in loc]
         except (ValueError, TypeError, OverflowError):
             continue
+        local = record.get("local_spatial")
+        local = local if isinstance(local, dict) else {}
         evidence.append({
             "id": f"i100-{well}-origin-{origin:+g}".replace(".", "_"),
             "category": "conditional_observation",
@@ -128,6 +130,11 @@ def build_copilot_context(*, selected=None, scenario_records=None, evidence_sha2
             "off_window_control_nrms_median_percent": _finite(m.get("off_window_control_nrms_median_percent")),
             "best_local_lag_samples": m.get("best_local_lag_samples"),
             "control_classification": _str(m.get("response_vs_off_window_controls")),
+            "local_core_nrms_percent": _finite(local.get("core_median_nrms_percent")),
+            "local_ring_nrms_percent": _finite(local.get("surrounding_median_nrms_percent")),
+            "local_core_minus_ring_percentage_points": _finite(
+                local.get("spatial_nrms_contrast_percentage_points")),
+            "local_spatial_pattern": _str(local.get("pattern") or local.get("status")),
             "interpretation": "conditional paired-amplitude response; fluid cause not established",
         })
     ids = [item["id"] for item in evidence]

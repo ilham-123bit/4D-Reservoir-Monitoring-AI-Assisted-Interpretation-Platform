@@ -29,6 +29,13 @@ class GemmaCopilotTests(unittest.TestCase):
                 "off_window_control_nrms_median_percent": 26.50,
                 "response_vs_off_window_controls": "larger_change_than_local_off_window_comparisons",
             },
+            "local_spatial": {
+                "status": "measured_local_spatial_contrast",
+                "core_median_nrms_percent": 40.05,
+                "surrounding_median_nrms_percent": 34.34,
+                "spatial_nrms_contrast_percentage_points": 5.71,
+                "pattern": "selected_region_similar_to_neighborhood",
+            },
         }]
         self.context = build_copilot_context(
             selected={"id": "archived-finding-1", "kind": "qc_follow_up",
@@ -44,6 +51,8 @@ class GemmaCopilotTests(unittest.TestCase):
         assert "/data/epic20" not in json.dumps(self.context)
         assert self.context["evidence"][-1]["paired_samples"] == 525
         assert self.context["evidence"][-1]["nrms_percent"] > 40
+        assert self.context["evidence"][-1]["local_spatial_pattern"] == "selected_region_similar_to_neighborhood"
+        assert self.context["evidence"][-1]["local_core_minus_ring_percentage_points"] == 5.71
         assert context_identity(self.context) == context_identity(self.context)
 
     def test_all_origin_scenarios_get_separate_provenance_ids(self):
