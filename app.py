@@ -765,7 +765,178 @@ if page not in ("Overview and QC", "Reservoir Command Center", "Gemma AI Copilot
         st.info('No completed valid findings registry is available. Expert seismic views remain available; automatic ML analysis does not run on page load.')
         st.caption('Coverage: N/A · no completed findings registry is available.')
 
-if page == "Reservoir Command Center":
+if page == "Reservoir Decision Briefing":
+    app_header.empty()
+    page_header("Angsi · Reservoir Decisions",
+                "1995 → 2006 | Measured change · Possible mechanisms · Next investigation")
+
+    # Use real source locations from the best available registry. Full-field
+    # candidates outrank the historical, QC-first Stage 3 archive as the SOURCE,
+    # but no anomaly automatically becomes a hydrocarbon prospect.
+    if full_field_registry and full_field_registry["entries"]:
+        _brief_source = "full_field"
+        _brief_source_records = [item["finding"] for item in full_field_registry["entries"]]
+    elif stage3_registry:
+        _brief_source = "historical_stage3"
+        _brief_source_records = stage3_registry["historical_findings"]
+    elif registry and registry["entries"]:
+        _brief_source = "bounded"
+        _brief_source_records = [item["finding"] for item in registry["entries"]]
+    else:
+        _brief_source = "none"
+        _brief_source_records = []
+
+    _brief_records = []
+    _brief_maps = {}
+    _brief_findings = {}
+    for _source_record in _brief_source_records[:10]:
+        _position = _source_record.get("array_location", _source_record.get("representative"))
+        _record_id = str(_source_record.get("id", ""))
+        if not _record_id or not isinstance(_position, (list, tuple)) or len(_position) != 3:
+            continue
+        try:
+            _region_result = cached_coherent_response(
+                dataset_cache_identity, _record_id, tuple(int(v) for v in _position),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _brief = candidate_briefing(_source_record, _region_result, source=_brief_source)
+        except (ValueError, IndexError, TypeError, KeyError) as _screen_error:
+            continue
+        _brief_records.append(_brief)
+        _brief_maps[_record_id] = _region_result
+        _brief_findings[_record_id] = _source_record
+
+    _brief_records.sort(key=lambda rec: (-rec["investigation_priority_index"], rec["id"]))
+    if not _brief_records:
+        st.info("No usable source-linked seismic regions are available yet.")
+        st.caption("Finding activation and source checks: Confidence & QC.")
+    else:
+        _choices = [rec["id"] for rec in _brief_records]
+        if st.session_state.get("home_focus_id") not in _choices:
+            _known = st.session_state.get("selected_finding_id")
+            st.session_state["home_focus_id"] = _known if _known in _choices else _choices[0]
+        _by_id = {rec["id"]: rec for rec in _brief_records}
+        _chosen_id = st.selectbox(
+            "Select a measured seismic region",
+            _choices, key="home_focus_id",
+            format_func=lambda key: (
+                f"{_choices.index(key)+1:02d} · {key[-10:]} · "
+                + ("Change + quieter neighbor" if _by_id[key]["quieter_region"] and _by_id[key]["stronger_region"]
+                   else "Stronger response" if _by_id[key]["stronger_region"]
+                   else "Quieter response" if _by_id[key]["quieter_region"]
+                   else "No robust local contrast")
+            ),
+        )
+        _focused = _by_id[_chosen_id]
+        _measured = _brief_maps[_chosen_id]
+        _focus_region = _focused["quieter_region"] or _focused["stronger_region"]
+        _focus_array = (_focus_region or {}).get("center_array", _focused["source_array_location"])
+        _focus_coord = (_focus_region or {}).get("center_segy", {})
+        if not _focus_coord:
+            _focus_coord = {"inline_id": int(inline_header_ids[_focus_array[0]]),
+                            "crossline_id": int(crossline_header_ids[_focus_array[1]]),
+                            "sample_index": int(_focus_array[2])}
+        if st.session_state.get("last_brief_focus_id") != _chosen_id:
+            st.session_state["selected_finding_id"] = _chosen_id
+            if _brief_source == "full_field":
+                st.session_state["registry_selection"] = _chosen_id
+            elif _brief_source == "historical_stage3":
+                st.session_state["stage3_finding_selection"] = _chosen_id
+            _jump_to_finding(_focus_array)
+            st.session_state["last_brief_focus_id"] = _chosen_id
+            st.session_state["last_synced_finding_id"] = _chosen_id
+        selected_investigation = {
+            "id": _chosen_id, "kind": _brief_source + "_spatial_screen",
+            "finding": _brief_findings[_chosen_id],
+        }
+
+        _cols = st.columns(3, gap="medium")
+        with _cols[0]:
+            st.markdown("### 01 · What changed and where?")
+            st.write(_focused["finding_text"])
+            st.markdown(
+                f"**SEG-Y IL {_focus_coord['inline_id']} · XL {_focus_coord['crossline_id']} "
+                f"· sample {_focus_coord['sample_index']}**"
+            )
+            st.caption(f"Measured nearby traces: {_focused['local_trace_support']:,}.")
+        with _cols[1]:
+            st.markdown("### 02 · Why could it change?")
+            st.write(_focused["why"])
+            st.caption("Two vintages do not uniquely identify fluid type or pressure change.")
+        with _cols[2]:
+            st.markdown("### 03 · Where to investigate next?")
+            st.write(_focused["next_decision"])
+            st.caption("Source-grid search area, not a drill-ready well location.")
+
+        st.markdown("### 1995 → 2006 · Coherent response map")
+        _map = go.Figure()
+        _bounds = _measured["bounds"]
+        _map.add_trace(go.Heatmap(
+            z=_measured["response_map"],
+            x=np.asarray(crossline_header_ids[_bounds[2]:_bounds[3]]),
+            y=np.asarray(inline_header_ids[_bounds[0]:_bounds[1]]),
+            colorscale="Viridis", zmin=0, zmax=200,
+            colorbar={"title": "NRMS (%)"},
+            hovertemplate="IL %{y} · XL %{x}<br>NRMS %{z:.1f}%<extra></extra>",
+        ))
+        for _kind, _label, _color in (
+            ("changed", "Stronger response", "#48f5ce"),
+            ("relatively_quiet", "Quieter response", "#ffca73"),
+        ):
+            for _zone in _measured["response_region_groups"][_kind]:
+                _xy = _zone["center_segy"]
+                _map.add_trace(go.Scatter(
+                    x=[_xy["crossline_id"]], y=[_xy["inline_id"]],
+                    mode="markers+text", name=_label, text=[str(_zone["trace_count"])+" traces"],
+                    textposition="top center",
+                    marker={"size": 13, "color": _color, "symbol": "circle-open",
+                            "line": {"color": _color, "width": 3}},
+                    hovertemplate=(f"{_label}<br>IL {_xy['inline_id']} · XL {_xy['crossline_id']}"
+                                   f"<br>sample {_xy['sample_index']}"
+                                   f"<br>median {_zone['median_nrms_percent']}% NRMS"
+                                   f"<br>{_zone['trace_count']} connected traces<extra></extra>"),
+                ))
+        _map.update_layout(
+            template="plotly_dark", height=445,
+            paper_bgcolor="#080d0e", plot_bgcolor="#101719",
+            font={"color": "#fff"}, margin={"l": 25, "r": 20, "t": 10, "b": 35},
+            xaxis_title="SEG-Y crossline", yaxis_title="SEG-Y inline",
+            legend={"orientation": "h", "y": -0.2},
+        )
+        st.plotly_chart(_map, width="stretch", theme=None, key="reservoir_decision_response_map")
+        if _focused["stronger_region"] and _focused["quieter_region"]:
+            _h, _q = _focused["stronger_region"], _focused["quieter_region"]
+            st.markdown(
+                f"**Changed area:** IL {_h['center_segy']['inline_id']} / XL {_h['center_segy']['crossline_id']} "
+                f"· {_h['median_nrms_percent']:.1f}% NRMS / {_h['trace_count']} traces. "
+                f"**Quieter comparison:** IL {_q['center_segy']['inline_id']} / XL {_q['center_segy']['crossline_id']} "
+                f"· {_q['median_nrms_percent']:.1f}% NRMS / {_q['trace_count']} traces."
+            )
+        else:
+            st.caption("No defensible two-region contrast at this sampled interval.")
+        st.caption(
+            f"Local median {_focused['local_median_nrms_percent'] if _focused['local_median_nrms_percent'] is not None else 'N/A'}% NRMS "
+            f"· required separation {_focused['required_contrast_pp'] if _focused['required_contrast_pp'] is not None else 'N/A'} pp "
+            "· paired seismic, not a saturation or sweep fraction."
+        )
+        with st.expander("Investigation catalogue and confidence", expanded=False):
+            st.dataframe([{
+                "Priority": i+1, "Finding": rec["id"],
+                "IL": (rec["location"] or {}).get("inline_id"),
+                "XL": (rec["location"] or {}).get("crossline_id"),
+                "Sample": (rec["location"] or {}).get("sample_index"),
+                "Spatial response": rec["spatial_pattern"],
+                "Evidence index (not probability)": rec["investigation_priority_index"],
+                "Edge risk": rec["edge_risk"],
+                "Drill-ready": "No",
+            } for i, rec in enumerate(_brief_records)], width="stretch", hide_index=True)
+            st.write(
+                "This screen maps measured coherent differences and quieter patches. "
+                "Oil, gas, water, effective sweep and bypassed volumes cannot be "
+                "identified from these seismic data alone without positive reservoir "
+                "and dynamic evidence. Scientific checks: Confidence & QC."
+            )
+
+elif page == "Reservoir Command Center":
     page_header("Angsi · Reservoir Intelligence",
                 "1995 → 2006 | What changed · Why · Where to investigate")
 
