@@ -1372,9 +1372,12 @@ elif page == "Well inventory":
     st.caption("Curve mnemonics are reported as supplied. PHIE, PERM, SWE, VOIL and VGAS are interpreted/derived source curves, not independently verified fluid or reservoir truth. Workbook X/Y values are shown as source numbers only; units, CRS and datum are unspecified.")
     st.info("Well-local marker/checkshot interpolation is available where both files declare compatible TVDSS (m) and TWT (ms). It is not a well-to-seismic tie. SEG-Y headers show 2 ms sampling and zero recording delay, but the textual headers do not explicitly declare a TWT sample domain; trace XY coordinates are zero and coordinate units are unset.")
     baseline_path = settings.challenge3_root / "volumes" / "Challenge3_Baseline_FilteredScaled_FullStack.sgy"
+    monitor_path = settings.challenge3_root / "volumes" / "Challenge3_Monitor_FilteredScaled_FullStack.sgy"
     try:
         identity = (str(baseline_path), baseline_path.stat().st_size, baseline_path.stat().st_mtime_ns)
         header_geometry = cached_header_geometry(str(baseline_path), identity)
+        monitor_identity = (str(monitor_path), monitor_path.stat().st_size, monitor_path.stat().st_mtime_ns)
+        monitor_geometry = cached_header_geometry(str(monitor_path), monitor_identity)
         conditional_map = conditionally_map_well_coordinates(
             evidence_matrix, header_geometry,
             inline_ids=np.asarray(inline_header_ids), crossline_ids=np.asarray(crossline_header_ids))
@@ -1388,7 +1391,12 @@ elif page == "Well inventory":
                      "Within Baseline header axes": projected[row["well_id"]].get("inside_header_axis_extent", "—")}
                     for row in evidence_matrix]
             st.dataframe(rows, use_container_width=True, hide_index=True)
-            st.warning("This is a numerical consistency test only. The Baseline affine fit predicts sampled CDP headers well, and Well-2 is near the independent DUG location note; workbook and SEG-Y CRS, coordinate units, datum, well trajectory, and physical seismic tie remain unverified. Do not use these points as confirmed reservoir associations. Monitor CDP coordinates do not pass the same geometry-consistency test.")
+            monitor_fit = monitor_geometry.get("affine_geometry", {})
+            monitor_r2 = monitor_fit.get("holdout_r2_x_y", [None, None])
+            monitor_error = monitor_fit.get("holdout_error_coordinate_units_unknown", {}).get("p95")
+            monitor_ok = all(value is not None and value >= 0.95 for value in monitor_r2)
+            st.warning("This is a numerical consistency test only. The Baseline affine fit predicts sampled CDP headers well, and Well-2 is near the independent DUG location note; workbook and SEG-Y CRS, coordinate units, datum, well trajectory, and physical seismic tie remain unverified. Do not use these points as confirmed reservoir associations.")
+            st.caption(f"Monitor sampled CDP affine holdout: R² X/Y {monitor_r2}; p95 residual {monitor_error if monitor_error is not None else 'unavailable'} in undeclared coordinate units; consistent sampled grid: {monitor_ok}. No Monitor well projection is performed.")
             st.caption(f"Baseline header-only sample: {header_geometry['sampled_trace_count']} traces; spatial holdout R² (X/Y) {header_geometry['affine_geometry']['holdout_r2_x_y']}; p95 holdout residual {header_geometry['affine_geometry']['holdout_error_coordinate_units_unknown']['p95']:.3f} in undeclared coordinate units. No amplitudes were loaded for this check.")
         else:
             st.info(f"Conditional coordinate comparison unavailable: {conditional_map.get('reason', 'header fit unavailable')}")
