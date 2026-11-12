@@ -48,6 +48,11 @@ class DashboardRenderingTests(unittest.TestCase):
             patch('reservoir_time_machine.llm.gemma_client.explain_evidence', side_effect=AssertionError('network path prohibited')):
             app = AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'), default_timeout=30).run()
             self.assertEqual(list(app.exception), [])
+            overview_text = '\n'.join(v.value for v in app.markdown)
+            self.assertLess(overview_text.index('Survey overview & QC'), overview_text.index('Scientific readiness'))
+            self.assertIn('Physical 4D registration · N/A', overview_text)
+            self.assertNotIn('cause N/A', overview_text)
+            self.assertNotIn('Registration N/A', overview_text)
             warning = 'Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.'
             self.assertIn(warning, [x.value for x in app.warning])
             for page in ['3D explorer', '4D comparison', 'Change detection', 'Survey transition',

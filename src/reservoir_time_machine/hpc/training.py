@@ -49,7 +49,9 @@ def _contained_path(root: Path, value: str | Path) -> Path:
 
 def _sanitized_provenance(value: dict[str, Any]) -> dict[str, Any]:
     permitted = {"dataset_id", "contract_version", "adapter_version", "source_hashes",
-                 "geometry_validation_id", "data_classification"}
+                 "geometry_validation_id", "data_classification", "training_objective",
+                 "label_semantics", "split_policy", "patch_shape", "samples_per_split",
+                 "split_starts_sha256", "challenge_root_used_for_data"}
     return {key: value[key] for key in permitted if key in value}
 
 
@@ -104,9 +106,14 @@ def _batch_loss(model, batch: dict[str, Any], model_kind: str, torch, device):
         raise ValueError("autoencoder batches require input")
     source = torch.as_tensor(batch["input"], dtype=torch.float32, device=device)
     valid = torch.isfinite(source)
-    target = torch.nan_to_num(source)
-    reconstruction = model(target)
-    if reconstruction.shape != target.shape:
+    model_input = torch.nan_to_num(source)
+    reconstruction_target = batch.get("target")
+    target = (torch.as_tensor(reconstruction_target, dtype=torch.float32, device=device)
+              if reconstruction_target is not None else torch.nan_to_num(source))
+    if not torch.isfinite(target).all():
+        raise ValueError("autoencoder target contains non-finite values")
+    reconstruction = model(model_input)
+    if reconstruction.shape != target.shape or target.shape != source.shape:
         raise ValueError("autoencoder reconstruction shape differs from input")
     squared_error = (reconstruction-target).square()
     explicit_mask = batch.get("valid_mask")
@@ -142,10 +149,16 @@ def train(config_path: str | Path) -> Path:
     kind = config.get("model", {}).get("kind")
     if kind == "siamese":
         labels = config.get("training", {})
-        if not labels.get("label_source") or not labels.get("independent_validation_source"):
+        adapter_ref = config.get("data", {}).get("adapter")
+        if adapter_ref == "reservoir_time_machine.hpc.patch_data:build_synthetic_training_bundle":
+            if config.get("training", {}).get("label_semantics") != "controlled_synthetic_only":
+                raise ValueError("synthetic Siamese training must explicitly declare controlled_synthetic_only label semantics")
+        elif not labels.get("label_source") or not labels.get("independent_validation_source"):
             raise ValueError("Siamese training requires defensible training and independent validation label sources")
     elif kind == "autoencoder":
-        if not config.get("training", {}).get("reference_population_id"):
+        adapter_ref = config.get("data", {}).get("adapter")
+        synthetic_adapter = adapter_ref == "reservoir_time_machine.hpc.patch_data:build_synthetic_autoencoder_bundle"
+        if not config.get("training", {}).get("reference_population_id") and not synthetic_adapter:
             raise ValueError("autoencoder training requires a documented reference population identifier")
     else:
         raise ValueError("model.kind must be 'siamese' or 'autoencoder'")
@@ -205,6 +218,7 @@ def train(config_path: str | Path) -> Path:
             raise FileExistsError("checkpoint directory is non-empty; configure resume_checkpoint or choose a new run_name")
         start_epoch = 0
     config_hash = _fingerprint_config(config)
+    dataset_provenance = _sanitized_provenance(bundle.get("provenance", {}))
     manifest_path = run_dir / "experiment_manifest.json"
     if manifest_path.exists() and not resume:
         raise FileExistsError("experiment manifest already exists; choose a new run_name")
@@ -219,7 +233,7 @@ def train(config_path: str | Path) -> Path:
                     "model_kind": kind, "model_version": "1.0", "configuration": config,
                     "configuration_sha256": config_hash, "seed": seed,
                     "deterministic_algorithms_requested": deterministic,
-                    "dataset_provenance": _sanitized_provenance(bundle.get("provenance", {})),
+                    "dataset_provenance": dataset_provenance,
                     "runtime": {"python": platform_version(), "torch": torch.__version__,
                                 "cuda_build": torch.version.cuda,
                                 "visible_device_name": torch.cuda.get_device_name(0),
@@ -262,6 +276,7 @@ def train(config_path: str | Path) -> Path:
                        "best_validation_loss": min(best_validation, validation_loss),
                        "train_loss": train_loss, "validation_loss": validation_loss,
                        "configuration_sha256": config_hash, "model_configuration": model_config, "seed": seed,
+                       "dataset_provenance": dataset_provenance,
                        "torch_version": torch.__version__, "cuda_build": torch.version.cuda}
             _save_checkpoint(torch, checkpoint_dir / "last.pt", payload)
             if validation_loss < best_validation:
@@ -271,7 +286,49 @@ def train(config_path: str | Path) -> Path:
         completion = {"status": "complete", "epochs": epochs, "best_validation_loss": best_validation,
                       "last_checkpoint_sha256": sha256_file(checkpoint_dir / "last.pt"),
                       "best_checkpoint_sha256": sha256_file(checkpoint_dir / "best.pt"),
+                      "dataset_provenance": dataset_provenance,
                       "score_status": "model output is not a calibrated probability without separate validation"}
+        if bundle.get("test_loader") is not None:
+            best = torch.load(checkpoint_dir / "best.pt", map_location=device, weights_only=False)
+            model.load_state_dict(best["model_state"])
+            model.eval()
+            test_losses = []
+            true_positive = false_positive = false_negative = 0
+            valid_voxels = 0
+            with torch.inference_mode():
+                for batch in bundle["test_loader"]:
+                    test_losses.append(float(_batch_loss(model, batch, kind, torch, device).cpu()))
+                    if kind == "siamese":
+                        before = torch.as_tensor(batch["baseline"], dtype=torch.float32, device=device)
+                        after = torch.as_tensor(batch["monitor"], dtype=torch.float32, device=device)
+                        logits = model(before, after)
+                        target = torch.as_tensor(batch["target"], dtype=torch.float32, device=device)
+                        if target.ndim == logits.ndim - 1:
+                            target = target.unsqueeze(1)
+                        valid = torch.as_tensor(batch.get("valid_mask", torch.ones_like(target)),
+                                                dtype=torch.bool, device=device)
+                        if valid.ndim == logits.ndim - 1:
+                            valid = valid.unsqueeze(1)
+                        predicted = logits >= 0.0
+                        actual = target >= 0.5
+                        true_positive += int((predicted & actual & valid).sum().cpu())
+                        false_positive += int((predicted & ~actual & valid).sum().cpu())
+                        false_negative += int((~predicted & actual & valid).sum().cpu())
+                        valid_voxels += int(valid.sum().cpu())
+            if not test_losses:
+                raise RuntimeError("dataset adapter returned an empty independent test loader")
+            completion["independent_test_loss"] = float(np.mean(test_losses))
+            completion["test_scope"] = "spatially held-out synthetic scenarios; not real-data geological validation"
+            if kind == "siamese":
+                precision = true_positive / max(1, true_positive + false_positive)
+                recall = true_positive / max(1, true_positive + false_negative)
+                completion["synthetic_voxel_metrics_at_logit_zero"] = {
+                    "precision": precision, "recall": recall,
+                    "f1": (2*precision*recall / max(1e-12, precision+recall)),
+                    "iou": true_positive / max(1, true_positive + false_positive + false_negative),
+                    "true_positive_voxels": true_positive, "false_positive_voxels": false_positive,
+                    "false_negative_voxels": false_negative, "valid_voxels": valid_voxels,
+                    "interpretation": "controlled synthetic task only; not Angsi change-detection performance"}
         with (run_dir / "training_complete.json").open("x", encoding="utf-8") as stream:
             json.dump(completion, stream, indent=2, sort_keys=True)
             stream.write("\n")

@@ -1,6 +1,6 @@
 {
   "experiment_name": "reference_reconstruction_research",
-  "run_name": "configure-before-use",
+  "run_name": "angsi-baseline-synthetic-denoise-smoke-20261112",
   "seed": 2026,
   "deterministic": true,
   "model": {
@@ -11,17 +11,18 @@
     }
   },
   "data": {
-    "adapter": "team_adapter.module:function",
-    "contract": "HPC-private PyTorch DataLoader adapter; read original data in place",
-    "patch_shape": null,
-    "overlap_voxels": null,
-    "reference_region_policy": null
+    "adapter": "reservoir_time_machine.hpc.patch_data:build_synthetic_autoencoder_bundle",
+    "contract": "denoising reference reconstruction with spatially separated synthetic corruption scenarios",
+    "patch_shape": [16, 16, 32],
+    "samples_per_split": 256,
+    "batch_size": 4,
+    "seed": 2026
   },
   "training": {
     "epochs": 20,
     "learning_rate": 0.0001,
     "weight_decay": 0.00001,
-    "reference_population_id": null
+    "reference_population_id": "Angsi Baseline valid patches; geological normality unverified"
   },
   "resume_checkpoint": null
 }

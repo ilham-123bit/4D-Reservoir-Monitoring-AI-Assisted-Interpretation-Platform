@@ -112,14 +112,81 @@ def finding_packet(result, finding, *, well_context=None):
         {'id':finding['id']+':well','category':'limitation','name':'well_association','value':finding['well_association'],'source':'well eligibility gate'},
     ])
     if well_context is not None:
+        table_counts = {}
+        table_quality = {}
+        for table in well_context.get('tables', []):
+            category = table.get('category', 'unknown')
+            table_counts[category] = table_counts.get(category, 0) + int(table.get('records', 0))
+            status = table.get('quality', {}).get('status', 'not assessed')
+            table_quality[category] = table_quality.get(category, {})
+            table_quality[category][status] = table_quality[category].get(status, 0) + 1
+        all_derived_curves = sorted({c['mnemonic'] for log in well_context.get('logs', [])
+                                     for c in log.get('curves', [])
+                                     if c.get('evidence_kind') == 'derived_or_interpreted_petrophysical_curve'})
+        curve_units = sorted({(c['mnemonic'], c.get('unit') or 'unit unavailable')
+                              for log in well_context.get('logs', []) for c in log.get('curves', [])})
+        preferred = {'GR', 'GR_P', 'DENS_P', 'DENB', 'RT', 'RT_P', 'DTC_P', 'DTCOM',
+                     'NEUT_P', 'NEUT', 'PHIE', 'PHIT', 'SWE', 'SWT', 'PERM', 'PERMH'}
+        compact_curves = [f'{name} [{unit}]' for name, unit in curve_units if name.upper() in preferred][:10]
+        quality_warnings = {category: sum(count for status, count in statuses.items()
+            if status not in {'structurally_valid_declared_checkshot_pairs', 'source_records_only'})
+            for category, statuses in table_quality.items()}
         facts.append({'id':finding['id']+':well_sources','category':'source_context','name':'available_well_context',
             'value':{'workbook_records':well_context['well_count'],'las_sources':len(well_context['logs']),
                 'table_sources':len(well_context['tables']),'association_available':False,
-                'missing_association_evidence':well_context['missing_association_evidence'],
+                'missing_association_evidence':well_context['missing_association_evidence'][:5],
+                'source_well_groups':sorted(well_context.get('by_well', {}))[:8],
+                'table_record_counts_by_category':table_counts,
+                'table_qc_warning_counts':quality_warnings,
+                'derived_or_interpreted_curve_type_count':len(all_derived_curves),
+                'static_well_data_is_not_temporal_change_evidence':True,
                 'well_inventory_sha256':hashlib.sha256(json.dumps(well_context,sort_keys=True,allow_nan=False).encode()).hexdigest(),
-                'curve_types_and_units':sorted({(c['mnemonic']+' ['+c['unit']+']') for log in well_context['logs'] for c in log['curves']})},
+                'curve_types_and_units':compact_curves,
+                'additional_curve_unit_pairs_not_listed':max(0,len(curve_units)-len(compact_curves))},
             'source':'local well-source inventory; no spatial or depth/time association'})
     return FindingEvidence(finding['id'],result['run_id'],tuple(facts),tuple(finding['limitations']))
+
+
+def stage3_finding_packet(finding, *, assessment_id: str) -> FindingEvidence:
+    """Create a compact typed packet from a validated Stage 3 screening record.
+
+    This keeps Gemma constrained to supplied findings and exact measurements;
+    it does not turn a Stage 2 index into geological confidence.
+    """
+    if not assessment_id or not finding.get('id', '').startswith('field-'):
+        raise ValueError('validated Stage 3 assessment and finding identity are required')
+    prefix = finding['id']
+    def fact(name, value, category='calculated_attribute'):
+        return {'id': f'{prefix}:{name}', 'name': name, 'category': category,
+                'value': value, 'source': f'{assessment_id}:{prefix}'}
+    flags = finding.get('detector_threshold_flagged_voxels', finding.get('detector_flagged_voxels', {}))
+    detector_support = {name: int(flags.get(name, 0)) for name in ('mahalanobis', 'pca', 'isolation_forest', 'gmm')}
+    facts = [
+        fact('mean_absolute_difference', float(finding['absolute_difference_mean'])),
+        fact('mean_signed_difference', float(finding['signed_difference_mean'])),
+        fact('mean_nrms_percent', float(finding['nrms_mean_percent'])),
+        fact('minimum_paired_support', int(finding['min_paired_support'])),
+        fact('candidate_membership', int(finding['component_voxels']), 'detection'),
+        fact('method_dependence', 'Classical detector scores share seismic attributes and are correlated.', 'limitation'),
+        fact('alternative_causes', 'Acquisition, processing, scaling, noise, and registration differences remain alternatives.', 'hypothesis'),
+        fact('physical_registration', 'unverified', 'limitation'),
+        fact('well_association', 'unverified; reservoir interval tie unavailable', 'limitation'),
+        fact('support_quality', 'adequate paired window support for this record; not evidence of physical repeatability.', 'limitation'),
+        fact('method_agreement', 'conflicting' if finding.get('mad_only') else 'unassessed_or_consistent', 'detection'),
+        fact('detector_threshold_flags', detector_support, 'detection'),
+        fact('source_location', {'inline_id': int(finding['inline_id']),
+                                 'crossline_id': int(finding['crossline_id']),
+                                 'sample_index': int(finding['sample_index'])}, 'observation'),
+        fact('edge_QC', finding.get('edge_qc', {}), 'limitation'),
+    ]
+    limitations = (
+        'Physical 4D registration is unverified; trace-key pairing is not physical registration.',
+        'Sample index origin/domain is unknown; it is not TWT or depth.',
+        'Well-to-seismic association and reservoir interval are unverified.',
+        'Statistical and ML scores are not hydrocarbon or recovery probabilities.',
+        'No production or pressure evidence establishes a recovery opportunity.',
+    )
+    return FindingEvidence(prefix, assessment_id, tuple(facts), limitations, data_classification='restricted')
 
 
 def validate_response(packet, response):

@@ -4,43 +4,56 @@ import numpy as np
 from ..data.validation import ValidationFinding, ValidationReport
 
 
-def quality_report(volume: np.ndarray, *, inline_chunk: int = 8) -> dict[str, object]:
+def quality_report(volume: np.ndarray, *, inline_chunk: int = 8,
+                   valid_trace_mask: np.ndarray | None = None) -> dict[str, object]:
     data = np.asanyarray(volume)
     if data.ndim != 3:
         raise ValueError("volume must use (inline, crossline, sample) axes")
     if inline_chunk < 1:
         raise ValueError("inline_chunk must be positive")
+    if valid_trace_mask is None:
+        valid_traces = None
+    else:
+        valid_traces = np.asarray(valid_trace_mask)
+        if valid_traces.shape != data.shape[:2] or valid_traces.dtype.kind != "b":
+            raise ValueError("valid_trace_mask must be Boolean and match the volume trace grid")
     finite_count = 0
     value_sum = value_square_sum = 0.0
     minimum, maximum = float("inf"), float("-inf")
     trace_rms_sum = trace_rms_square_sum = 0.0
     available_trace_count = missing_trace_count = 0
+    excluded_trace_count = 0
     nan_count = positive_inf_count = negative_inf_count = traces_with_nonfinite = zero_energy_trace_count = 0
     for start in range(0, data.shape[0], inline_chunk):
         block = np.asarray(data[start:start+inline_chunk], dtype=float)
-        finite = np.isfinite(block)
+        eligible_traces = (np.ones(block.shape[:2], dtype=bool) if valid_traces is None
+                           else valid_traces[start:start+inline_chunk])
+        excluded_trace_count += int((~eligible_traces).sum())
+        finite = np.isfinite(block) & eligible_traces[..., None]
         values = block[finite]
         finite_count += int(values.size)
-        nan_count += int(np.isnan(block).sum())
-        positive_inf_count += int(np.isposinf(block).sum())
-        negative_inf_count += int(np.isneginf(block).sum())
+        in_scope = eligible_traces[..., None]
+        nan_count += int((np.isnan(block) & in_scope).sum())
+        positive_inf_count += int((np.isposinf(block) & in_scope).sum())
+        negative_inf_count += int((np.isneginf(block) & in_scope).sum())
         if values.size:
             value_sum += float(values.sum(dtype=np.float64))
             value_square_sum += float(np.square(values, dtype=np.float64).sum(dtype=np.float64))
             minimum, maximum = min(minimum, float(values.min())), max(maximum, float(values.max()))
         per_trace_count = finite.sum(axis=2)
-        traces_with_nonfinite += int((~finite.all(axis=2)).sum())
+        traces_with_nonfinite += int((eligible_traces & ~finite.all(axis=2)).sum())
         per_trace_energy = np.sum(np.where(finite, block, 0.0)**2, axis=2)
         trace_rms = np.sqrt(np.divide(per_trace_energy, per_trace_count,
             out=np.zeros(per_trace_energy.shape, dtype=float), where=per_trace_count > 0))
-        present = per_trace_count > 0
-        missing_trace_count += int((~present).sum())
+        present = (per_trace_count > 0) & eligible_traces
+        missing_trace_count += int((~eligible_traces).sum()) + int((eligible_traces & (per_trace_count == 0)).sum())
         zero_energy_trace_count += int((present & (trace_rms == 0)).sum())
         available_trace_count += int(present.sum())
         selected = trace_rms[present]
         trace_rms_sum += float(selected.sum())
         trace_rms_square_sum += float(np.square(selected).sum())
-    voxel_count = int(data.size)
+    source_voxel_count = int(data.size)
+    voxel_count = int((valid_traces.sum(dtype=np.int64) if valid_traces is not None else data.shape[0]*data.shape[1]) * data.shape[2])
     mean = value_sum / finite_count if finite_count else float("nan")
     rms = float(np.sqrt(value_square_sum / finite_count)) if finite_count else float("nan")
     std = float(np.sqrt(max(0.0, value_square_sum / finite_count - mean**2))) if finite_count else float("nan")
@@ -69,6 +82,8 @@ def quality_report(volume: np.ndarray, *, inline_chunk: int = 8) -> dict[str, ob
     return {
         "dimensions": tuple(data.shape),
         "voxel_count": voxel_count,
+        "source_voxel_count": source_voxel_count,
+        "excluded_masked_trace_count": excluded_trace_count,
         "finite_voxels": finite_count,
         "availability_fraction": finite_count / voxel_count if voxel_count else 0.0,
         "missing_trace_count": missing_trace_count,

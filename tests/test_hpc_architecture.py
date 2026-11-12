@@ -26,10 +26,11 @@ def test_hpc_configs_are_templates_and_do_not_embed_actual_dataset_paths():
         assert "/data/" not in contents
         assert "Challenge3_InputData" not in contents
     siamese = json.loads(configs[0].read_text())
-    assert siamese["training"]["label_source"] is None
-    assert siamese["data"]["adapter"] == "team_adapter.module:function"
+    assert siamese["training"]["label_semantics"] == "controlled_synthetic_only"
+    assert siamese["data"]["adapter"] == "reservoir_time_machine.hpc.patch_data:build_synthetic_training_bundle"
+    assert "not Angsi geological ground truth" in siamese["data"]["contract"]
     autoencoder = json.loads(configs[1].read_text())
-    assert autoencoder["training"]["reference_population_id"] is None
+    assert "geological normality unverified" in autoencoder["training"]["reference_population_id"]
 
 
 def test_model_configs_validate_without_importing_torch():
@@ -80,6 +81,8 @@ def test_training_and_submission_scripts_are_fail_closed_templates():
     submit = (ROOT / "scripts/hpc/submit_training.sh").read_text(encoding="utf-8")
     job = (ROOT / "scripts/hpc/train_job.sh").read_text(encoding="utf-8")
     assert "RTM_SLURM_GPU_REQUEST" in submit
+    assert "RTM_SLURM_QOS" in submit and "RTM_SLURM_CONSTRAINT" in submit
+    assert "RTM_SLURM_MCS_LABEL" in submit and "%x-%j.out" in submit and "%x-%j.err" in submit
     assert "squeue" in submit and "flock" in submit
     assert "RTM_GPU_KERNEL_ACTIVE" in submit
     assert "--strict" in job

@@ -7,6 +7,7 @@ CACHE_FILES = ('metadata.json', 'baseline.npy', 'monitor.npy', 'missing_trace_ma
                'monitor_only_traces.npy', 'monitor_only_keys.npy')
 SMALL_FILES = {'metadata.json', 'missing_trace_mask.npy', 'monitor_only_keys.npy'}
 ANALYSIS_VERSION = 'phase1-attributes-support-1'
+PORTABLE_PROVENANCE_VERSION = 'rtm-paired-cache-provenance-2'
 
 
 def paired_cache_identity(root, cache_directory):
@@ -25,6 +26,44 @@ def paired_cache_identity(root, cache_directory):
             record.append(hashlib.sha256(path.read_bytes()).hexdigest())
         records.append(record)
     return hashlib.sha256(json.dumps([ANALYSIS_VERSION, records], sort_keys=True).encode()).hexdigest()
+
+
+def paired_cache_provenance(cache_directory):
+    """Return a reproducible, non-authenticating cache fingerprint and details.
+
+    Deliberately excludes inode and ctime, which can vary between filesystem
+    clients. It hashes the small metadata/occupancy/key files and records stable
+    path, size, mtime, NPY shape and dtype for large arrays. Processed chunk
+    hashes remain the content-level verification for the data actually read.
+    This function never hashes a full seismic cube or writes to the cache.
+    """
+    import numpy as np
+
+    cache = Path(cache_directory).expanduser().resolve()
+    records = []
+    required_files = {"metadata.json", "baseline.npy", "monitor.npy", "missing_trace_mask.npy"}
+    for name in CACHE_FILES:
+        path = cache / name
+        if not path.exists():
+            if name in required_files:
+                raise FileNotFoundError(f"required paired-cache file is missing: {name}")
+            records.append({"name": name, "present": False})
+            continue
+        stat = path.stat()
+        item = {"name": name, "path": str(path), "size_bytes": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns, "present": True}
+        if name in {"baseline.npy", "monitor.npy", "missing_trace_mask.npy"}:
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+            item.update(shape=list(array.shape), dtype=str(array.dtype))
+        if name in SMALL_FILES:
+            item["content_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        records.append(item)
+    details = {"schema": PORTABLE_PROVENANCE_VERSION, "cache_directory": str(cache),
+               "identity_scope": "metadata/control-file SHA256 plus large-file stat fingerprint; not full-array authentication",
+               "files": records,
+               "content_verification": "processed chunk SHA256 records authenticate the input blocks actually analyzed"}
+    payload = json.dumps(details, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return hashlib.sha256(payload).hexdigest(), details
 
 
 def validate_cache_index_metadata(metadata, missing, monitor_only_keys):

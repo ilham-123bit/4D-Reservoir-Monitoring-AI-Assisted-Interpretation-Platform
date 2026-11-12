@@ -50,7 +50,8 @@ def render_preliminary(result, *, allow_external=False, well_context=None):
     fig.add_trace(go.Heatmap(z=np.where(display_region(result['labels'],finding['label'],128),1,np.nan),
                             x=xs+x0,y=ys+i0,showscale=False,colorscale=[[0,'#ff7047'],[1,'#ff7047']],opacity=.5))
     st.plotly_chart(fig.update_layout(title='Selected preliminary finding · source grid indices',
-                    xaxis_title='Crossline index',yaxis_title='Inline index',height=400),use_container_width=True)
+                    xaxis_title='Crossline source index',yaxis_title='Inline source index',height=400),
+                    use_container_width=True,theme=None)
     if finding['touches_tile_boundary']:
         st.caption('Candidate intersects the tile boundary; extent may continue outside the analyzed area.')
     packet = finding_packet(result,finding,well_context=well_context)

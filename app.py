@@ -20,16 +20,23 @@ from reservoir_time_machine.data_ingest.segy_loader import (
 )
 from reservoir_time_machine.detection.clustering import connected_zones
 from reservoir_time_machine.detection.statistical import statistical_screen
-from reservoir_time_machine.preprocessing.qc import quality_report
 from reservoir_time_machine.settings import ApplicationSettings, LLMSettings
+from reservoir_time_machine.ai.grounding import (stage3_finding_packet, interpret,
+    GemmaFindingProvider, explanation_identity, transmission_allowed)
 from reservoir_time_machine.analysis.preliminary import run_preliminary, VERSION as ML_VERSION
 from reservoir_time_machine.visualization.preliminary import render_preliminary
 from reservoir_time_machine.analysis.registry import load_registry
+from reservoir_time_machine.analysis.full_field_registry import load_full_field_registry
+from reservoir_time_machine.analysis.stage3_registry import load_stage3_registry
 from reservoir_time_machine.analysis.technical_report import report_markdown
 from reservoir_time_machine.visualization.presentation import select_entry,render_presentation
 import json,re
 from reservoir_time_machine.visualization.guided_report import render_page_report
-from reservoir_time_machine.visualization.finding_animation import finding_animation
+from reservoir_time_machine.visualization.presentation_cache import (
+    load_presentation,
+    presentation_identity,
+    presentation_cache_token,
+)
 from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary
 from reservoir_time_machine.visualization.animation import animation_figure
 from reservoir_time_machine.visualization.dashboard_state import empty_dataset_state
@@ -42,6 +49,9 @@ from reservoir_time_machine.visualization.slices import (
     display_slice,
     display_volume,
 )
+from reservoir_time_machine.visualization.coverage import coverage_figure
+from reservoir_time_machine.visualization.coordinates import finding_header_location, header_id
+from reservoir_time_machine.preprocessing.qc_artifact import load_qc_artifact
 from reservoir_time_machine.visualization.theme import apply_theme, format_metric_count, page_header, registration_warning, section
 
 
@@ -78,10 +88,20 @@ def cached_actual_pair(root: str, cache_dir: str | None, dataset_identity: str):
     )
 
 
-@st.cache_resource(max_entries=2)
-def cached_quality_report(dataset_identity: str, survey_id: str, _volume):
-    """Reuse a full-volume QC report for an unchanged cached survey."""
-    return quality_report(_volume)
+@st.cache_resource(max_entries=1)
+def cached_monitor_only_keys(path: str, dataset_identity: str):
+    return np.load(path, mmap_mode="r", allow_pickle=False)
+
+
+@st.cache_resource(max_entries=4)
+def cached_tile_attributes(dataset_identity: str, run_id: str, sample_index: int,
+                          bounds: tuple[int, int, int, int], _baseline_tile, _monitor_tile):
+    return calculate_sample_attributes(_baseline_tile, _monitor_tile, sample_index, window_samples=9)
+
+
+@st.cache_data(max_entries=2)
+def cached_qc_artifact(path: str, dataset_identity: str, shape: tuple[int, int, int]):
+    return load_qc_artifact(path, source_identity=dataset_identity, shape=shape)
 
 
 @st.cache_resource(max_entries=2)
@@ -134,16 +154,64 @@ def cached_well_evidence(root, source_identity):
     return well_evidence_summary(root)
 
 
+@st.cache_data(max_entries=4)
+def cached_well_las(path, source_identity):
+    from reservoir_time_machine.data_ingest.las_loader import inspect_las
+    return inspect_las(path)
+
+
 @st.cache_resource(max_entries=2)
-def cached_finding_presentation(run_id,finding_id,_baseline,_monitor,_missing,_result,_finding):
-    return finding_animation(_baseline,_monitor,_missing,_result,_finding)
+def cached_stage3_registry(path, package_token, shape, inline_ids, crossline_ids):
+    return load_stage3_registry(path, expected_shape=shape,
+                                inline_ids=inline_ids, crossline_ids=crossline_ids)
+
+
+@st.cache_resource(max_entries=4)
+def cached_finding_presentation(registry_id,run_id,finding_id,dataset_id,cache_root,cache_token):
+    identity=presentation_identity(registry_id,run_id,finding_id,dataset_id)
+    return load_presentation(cache_root,identity)
 
 
 def _jump_to_finding(location):
     st.session_state['shared_inline'], st.session_state['shared_crossline'], st.session_state['shared_sample'] = location
 
 
+def _jump_to_stage3_selection(selection_key, location_by_id):
+    selected_id = st.session_state.get(selection_key)
+    if selected_id in location_by_id:
+        _jump_to_finding(location_by_id[selected_id])
+
+
 def bounded_ml_evidence(allow_external=False):
+    if full_field_registry and field_entry:
+        st.markdown('### Completed full-volume screening findings')
+        st.caption('Ranking is an investigation priority index, not a calibrated probability or geological classification.')
+        rows=[]
+        for item in full_field_registry['entries']:
+            f=item['finding'];p=f['segy_location'];m=f['measurements']
+            rows.append({'rank':item['rank'],'finding':item['id'],'inline ID':p['inline_id'],
+                'crossline ID':p['crossline_id'],'sample index':p['sample_index'],
+                'mean |difference|':m['mean_absolute_difference'],'mean NRMS (%)':m['mean_nrms_percent'],
+                'edge risk':f['edge_artifact_risk'],'priority':f['investigation_priority_index']})
+        st.dataframe(rows,use_container_width=True,hide_index=True)
+        try:
+            labels_path=Path(full_field_registry['body']['provenance']['component_labels_path'])
+            labels=cached_component_labels(str(labels_path),labels_path.stat().st_size,
+                labels_path.stat().st_mtime_ns,tuple(baseline.shape))
+            plane=np.asarray(labels[:,:,field_finding['array_location'][2]])==int(field_finding['component_label'])
+            shown=display_mask(plane,max_axis=700)
+            row_stride=max(1,int(np.ceil(plane.shape[0]/700)));col_stride=max(1,int(np.ceil(plane.shape[1]/700)))
+            fig=go.Figure(go.Heatmap(z=shown,x=np.asarray(crossline_header_ids)[::col_stride],
+                y=np.asarray(inline_header_ids)[::row_stride],colorscale=[[0,'rgba(0,0,0,0)'],[1,'#31edc2']],
+                zmin=0,zmax=1,showscale=False,name='Selected 3D component'))
+            st.plotly_chart(fig.update_layout(template='plotly_dark',paper_bgcolor='#080d0e',plot_bgcolor='#101719',
+                font={'color':'#fff'},title='Selected finding footprint · sample plane',
+                xaxis_title='SEG-Y crossline ID',yaxis_title='SEG-Y inline ID',height=480),use_container_width=True,theme=None)
+        except (OSError,ValueError,KeyError,TypeError):
+            st.error('The validated component map could not be opened; finding measurements remain available.')
+        st.write(field_finding['detectors'])
+        st.info('Well evidence is contextual only; no well-to-seismic association is asserted.')
+        return
     if guided_result is None:
         st.info('No completed registry is configured. Run the explicit bounded/scheduled analysis job; opening this page does not fit models.')
         return
@@ -225,6 +293,9 @@ for state_key, maximum in (("shared_sample", baseline.shape[2] - 1),
 if not paired_grid_available or not capabilities["trace_key_preliminary_screening"]["available"]:
     st.error("Paired Baseline/Monitor screening requirements are unresolved.")
     st.stop()
+source_meta=monitor_volume.metadata.source_metadata
+inline_header_ids=source_meta.get('inline_ids',source_meta.get('inline_ids_selected',[]))
+crossline_header_ids=source_meta.get('crossline_ids',source_meta.get('crossline_ids_selected',[]))
 
 # Load only completed, versioned results. Model fitting is never a startup side effect.
 registry=None;registry_error=None;guided_result=None;guided_finding=None
@@ -239,9 +310,33 @@ if registry_value is None:
             registry_value=values['findings_registry']
     except (OSError,ValueError,TypeError):registry_error='Invalid runtime registry configuration'
 registry_path=Path(registry_value or str(Path.home()/'.reservoir_time_machine/analysis/registry.json')).expanduser()
+presentation_cache_root=Path(os.environ.get(
+    'RTM_PRESENTATION_CACHE',str(registry_path.parent/'presentations'))).expanduser()
 @st.cache_resource(max_entries=2)
 def cached_registry(path,identity,shape,payload_identity):
     return load_registry(path,identity,shape)
+@st.cache_resource(max_entries=2)
+def cached_full_field_registry(path,identity,shape,inline_ids,crossline_ids,payload_identity):
+    return load_full_field_registry(path,dataset_identity=identity,shape=shape,
+        inline_ids=inline_ids,crossline_ids=crossline_ids)
+@st.cache_resource(max_entries=2)
+def cached_component_labels(path,size,mtime_ns,shape):
+    labels=np.load(path,mmap_mode='r',allow_pickle=False)
+    if tuple(labels.shape)!=tuple(shape):raise ValueError('Full-field component map geometry mismatch')
+    return labels
+
+def select_full_field_entry(entries,offset=0):
+    ids=[item['id'] for item in entries]
+    if not ids:return
+    if offset=='top':
+        item=entries[0]
+    else:
+        current=st.session_state.get('registry_selection',ids[0]);index=ids.index(current) if current in ids else 0
+        item=entries[(index+offset)%len(ids)]
+    st.session_state['registry_selection']=item['id']
+    st.session_state['selected_preliminary_finding']={**item['finding'],'dataset_id':item['finding']['source_identity']}
+    for key,value in zip(('shared_inline','shared_crossline','shared_sample'),item['finding']['array_location']):
+        st.session_state[key]=value
 if registry_path.is_file():
     try:
         if registry_path.stat().st_size>2_000_000:raise ValueError('Manifest too large')
@@ -253,6 +348,72 @@ if registry_path.is_file():
         registry=cached_registry(str(registry_path),dataset_cache_identity,tuple(baseline.shape),
             (hashlib.sha256(registry_bytes).hexdigest(),artifact_stats))
     except (ValueError,OSError,KeyError,TypeError) as exc:registry_error=type(exc).__name__
+full_field_registry=None;full_field_registry_error=None;field_entry=None;field_finding=None
+full_field_registry_value=os.environ.get('RTM_FULL_FIELD_REGISTRY')
+if full_field_registry_value:
+    field_path=Path(full_field_registry_value).expanduser().resolve()
+    try:
+        inline_axis=source_meta.get('inline_ids',source_meta.get('inline_ids_selected',[]))
+        crossline_axis=source_meta.get('crossline_ids',source_meta.get('crossline_ids_selected',[]))
+        if not field_path.is_file():
+            raise FileNotFoundError('Configured full-field registry pointer is unavailable')
+        if field_path.is_file():
+            pointer_bytes=field_path.read_bytes()
+            full_field_registry=cached_full_field_registry(str(field_path),dataset_cache_identity,
+                tuple(baseline.shape),tuple(map(int,inline_axis)),tuple(map(int,crossline_axis)),
+                (hashlib.sha256(pointer_bytes).hexdigest(),field_path.stat().st_size,field_path.stat().st_mtime_ns))
+    except (OSError,ValueError,KeyError,TypeError) as exc:
+        full_field_registry_error=type(exc).__name__
+        full_field_registry=None
+if full_field_registry and full_field_registry['entries']:
+    registry=None;guided_result=None;guided_finding=None
+    field_entries=full_field_registry['entries'];field_ids=[item['id'] for item in field_entries]
+    if st.session_state.get('field_registry_identity')!=full_field_registry['id']:
+        st.session_state['field_registry_identity']=full_field_registry['id']
+        st.session_state['registry_selection']=field_ids[0]
+    if st.session_state.get('registry_selection') not in field_ids:
+        st.session_state['registry_selection']=field_ids[0]
+    field_entry=next(item for item in field_entries if item['id']==st.session_state['registry_selection'])
+    field_finding=field_entry['finding']
+    for key,value in zip(('shared_inline','shared_crossline','shared_sample'),field_finding['array_location']):
+        st.session_state[key]=value
+elif full_field_registry is not None:
+    st.success('Full-field results validated; no findings met the configured screening criteria.')
+elif full_field_registry_error:
+    st.error('Full-field findings failed validation. The prior accepted registry remains unchanged; any bounded results below are preliminary only.')
+else:
+    st.info('Full-field findings are not active. Any available bounded screening remains preliminary and is not a global ranking.')
+
+# The Stage 3 assessment is a small checksummed interpretation package. Loading it
+# validates only its JSON/CSV/PDF artifacts; no seismic or full-field score maps are
+# re-read or recomputed during Streamlit navigation.
+stage3_registry = None
+stage3_registry_error = None
+stage3_dir_value = os.environ.get("RTM_STAGE3_EVIDENCE_DIR")
+if stage3_dir_value is None:
+    default_stage3_dir = Path.home() / "rtm-scientific-qa" / "stage3-evidence"
+    stage3_dir_value = str(default_stage3_dir) if default_stage3_dir.is_dir() else None
+if stage3_dir_value:
+    stage3_assessment_path = Path(stage3_dir_value).expanduser() / "stage3_assessment.json"
+    try:
+        manifest_path = stage3_assessment_path.parent / "stage3_manifest.sha256"
+        package_token = tuple((p.name, p.stat().st_size, p.stat().st_mtime_ns)
+                              for p in sorted(stage3_assessment_path.parent.iterdir()) if p.is_file())
+        stage3_registry = cached_stage3_registry(
+            str(stage3_assessment_path), package_token, tuple(baseline.shape),
+            tuple(map(int, inline_header_ids)), tuple(map(int, crossline_header_ids)))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        stage3_registry_error = type(exc).__name__
+if stage3_registry and st.session_state.get("workspace_page") == "Recovery intelligence":
+    stage3_locations = {item["finding"]["id"]: item["finding"]["array_location"]
+                        for item in stage3_registry["qc_follow_up_actions"]}
+    if not stage3_locations:
+        stage3_locations = {item["id"]: item["array_location"]
+                            for item in stage3_registry["historical_findings"]}
+    selection_key = "stage3_action_selection" if stage3_registry["qc_follow_up_actions"] else "stage3_discovery_selection"
+    selected_stage3_id = st.session_state.get(selection_key, next(iter(stage3_locations), None))
+    if selected_stage3_id in stage3_locations:
+        _jump_to_finding(stage3_locations[selected_stage3_id])
 if registry and registry['entries']:
     ids=[e['id'] for e in registry['entries']]
     pending=st.session_state.pop('pending_registry_selection',None)
@@ -273,13 +434,43 @@ well_context=registry['body']['wells'] if registry else cached_well_evidence(str
     tuple((str(p),p.stat().st_size,p.stat().st_mtime_ns) for p in sorted((settings.challenge3_root/'well_data').rglob('*')) if p.is_file()))
 discovery=registry['body']['coverage'] if registry else {'status':'No completed analysis registry'}
 paired_missing=np.asarray(baseline_volume.missing_trace_mask)|np.asarray(monitor_volume.missing_trace_mask)
+source_meta = monitor_volume.metadata.source_metadata
+inline_header_ids = source_meta.get("inline_ids", source_meta.get("inline_ids_selected", []))
+crossline_header_ids = source_meta.get("crossline_ids", source_meta.get("crossline_ids_selected", []))
+try:
+    monitor_only_keys = cached_monitor_only_keys(
+        str(cache_directory / "monitor_only_keys.npy"), dataset_cache_identity
+    )
+except (OSError, ValueError):
+    monitor_only_keys = None
+
+qc_artifact_path = Path(os.environ.get(
+    "RTM_QC_ARTIFACT",
+    str(Path.home() / ".reservoir_time_machine/analysis/qc" /
+        f"survey-qc-{dataset_cache_identity}.json"),
+)).expanduser()
+qc_artifact = None
+qc_artifact_error = None
+if qc_artifact_path.is_file():
+    try:
+        qc_artifact = cached_qc_artifact(str(qc_artifact_path), dataset_cache_identity, tuple(baseline.shape))
+    except (OSError, ValueError, KeyError, TypeError):
+        qc_artifact_error = "Survey QC artifact failed source, version, or checksum validation."
 
 with st.sidebar:
     st.header("Workspace")
     page = st.radio("Workspace", ["Overview and QC", "3D explorer", "4D comparison",
-                                   "Change detection", "Survey transition", "Well inventory", "Evidence explanation"],
-                    label_visibility="collapsed")
-    if registry and registry['entries']:
+                                   "Change detection", "Survey transition", "Well inventory", "Evidence explanation",
+                                   "Recovery intelligence"],
+                    label_visibility="collapsed", key="workspace_page")
+    if full_field_registry and full_field_registry['entries']:
+        current=field_entry
+        st.markdown(f"**Full-volume finding {current['rank']} / {len(full_field_registry['entries'])}**")
+        nav=st.columns(2)
+        nav[0].button('Previous finding',on_click=select_full_field_entry,args=(full_field_registry['entries'],-1),key='field_prev')
+        nav[1].button('Next finding',on_click=select_full_field_entry,args=(full_field_registry['entries'],1),key='field_next')
+        st.button('Return to top finding',on_click=select_full_field_entry,args=(full_field_registry['entries'],'top'),key='field_top')
+    elif registry and registry['entries']:
         current = next((e for e in registry['entries'] if e['id'] == st.session_state.get('registry_selection')),
                        registry['entries'][0])
         st.markdown(f"**Finding {current['local_rank']} / {len(registry['entries'])}**")
@@ -305,6 +496,21 @@ if not paired_grid_available or not capabilities["trace_key_preliminary_screenin
 if page != "4D comparison" and not physical_4d_registration_verified:
     registration_warning()
 
+if full_field_registry and field_entry:
+    finding=field_finding;record=field_entry['interpretation'];loc=finding['segy_location'];metrics=finding['measurements']
+    st.markdown(f"## Full-volume finding {field_entry['rank']} · {finding['id']}")
+    st.markdown(f"**Location** · Inline {loc['inline_id']} · Crossline {loc['crossline_id']} · Sample index {loc['sample_index']}")
+    st.markdown(f"**RESULT** · Mean |difference| {metrics['mean_absolute_difference']:.4g} · NRMS {metrics['mean_nrms_percent']:.3g}% · {finding['component_voxels']:,} connected voxels")
+    st.markdown(f"**DISCUSSION** · {record['discussion']}")
+    st.markdown(f"**ACTION** · {record['actions'][0]['action']}")
+    priority=finding.get('investigation_priority_index');priority_text=f"{priority:.3f}" if isinstance(priority,(int,float)) else 'N/A'
+    st.caption(f"Priority {priority_text} (not probability) · edge risk {finding['edge_artifact_risk']:.2f} · physical registration unverified · valid coverage {full_field_registry['body']['coverage']['valid_voxels']:,}/{full_field_registry['body']['coverage']['processed_voxels']:,} voxels.")
+    with st.expander('Well context, discipline actions and provenance'):
+        st.markdown('\n'.join(f"- **{item['discipline']}:** {item['action']}" for item in record['actions']))
+        st.write(field_entry['well_evidence'])
+        st.write(record['limitations'])
+        st.write(full_field_registry['body']['provenance'])
+
 if guided_finding and [st.session_state[k] for k in ('shared_inline','shared_crossline','shared_sample')]!=guided_finding['representative']:
     st.caption('Advanced view coordinates differ from the report finding. Use Return to automatic focus to resynchronize. The report remains scoped to '+str(guided_finding['representative'])+'.')
 if registry and 'source_identity' in well_context:
@@ -322,83 +528,168 @@ if saved_finding and saved_finding.get('dataset_id') == dataset_cache_identity:
 def cached_technical_report(registry_id,_registry):
     return report_markdown(_registry)
 
-if registry:
-    c=registry['body']['coverage']
-    st.caption(f"Coverage {c['completed_tiles']}/{c['planned_tiles']} tiles · local ranking only")
-    st.download_button('Download technical report',cached_technical_report(registry['id'],registry),file_name='reservoir-time-machine-report.md',mime='text/markdown')
-if registry is None or registry['body']['coverage']['pending_tiles']:
-    with st.expander('Extend analysis'):
-        st.caption('Run bounded analysis through the configured batch workflow. Opening this page does not start analysis.')
-        template=Path(__file__).resolve().parent/'config/hpc/phase3_discovery.slurm'
-        if template.is_file():st.download_button('Download bounded analysis template',template.read_text(),file_name='phase3_discovery.slurm')
-if guided_result is not None:
-    with st.expander('Selected finding · result / discussion / action',expanded=True):
-        render_page_report(guided_result,guided_finding,well_context,page,discovery,shared_interpretation=entry['interpretation'])
-else:
-    st.info('No completed valid findings registry is available. Expert seismic views remain available; automatic ML analysis does not run on page load.')
-    st.caption('Coverage: N/A · no completed findings registry is available.')
+if page != "Overview and QC":
+    if registry:
+        c=registry['body']['coverage']
+        st.caption(f"Coverage {c['completed_tiles']}/{c['planned_tiles']} tiles · local ranking only")
+        st.download_button('Download technical report',cached_technical_report(registry['id'],registry),file_name='reservoir-time-machine-report.md',mime='text/markdown')
+    if registry is None or registry['body']['coverage']['pending_tiles']:
+        with st.expander('Extend analysis'):
+            st.caption('Run bounded analysis through the configured batch workflow. Opening this page does not start analysis.')
+            template=Path(__file__).resolve().parent/'config/hpc/phase3_discovery.slurm'
+            if template.is_file():st.download_button('Download bounded analysis template',template.read_text(),file_name='phase3_discovery.slurm')
+    if guided_result is not None:
+        with st.expander('Selected finding · result / discussion / action',expanded=True):
+            render_page_report(guided_result,guided_finding,well_context,page,discovery,
+                shared_interpretation=entry['interpretation'],inline_ids=inline_header_ids,
+                crossline_ids=crossline_header_ids,grid_shape=baseline.shape[:2])
+    else:
+        st.info('No completed valid findings registry is available. Expert seismic views remain available; automatic ML analysis does not run on page load.')
+        st.caption('Coverage: N/A · no completed findings registry is available.')
 
 if page == "Overview and QC":
+    page_header("Survey overview & QC", "Coverage, measured data quality, and preliminary finding evidence.")
+    section("Scientific readiness")
+    st.markdown(
+        "- **Trace-key pairing · VERIFIED:** common Baseline/Monitor inline-crossline keys are paired; Monitor-only keys are excluded from paired attributes.\n"
+        "- **Physical 4D registration · N/A:** trace-key pairing does not prove spatial or event alignment; validate geometry, timing, and repeatability.\n"
+        "- **Sample time/depth · N/A:** the sample origin and domain are unresolved; sample labels remain array indices.\n"
+        "- **Well tie · N/A:** shared CRS, datum, trajectory, and time-depth association are not established; validate these before assigning wells to findings.\n"
+        "- **Ranking · LOCAL:** only completed tiles are comparable within their own analysis run; survey-wide priority is not established."
+    )
+
     if registry:
-        st.markdown('### Completed findings · local investigation ranks')
-        for item in registry['entries'][:5]:
-            f=item['finding'];m=f['metrics']
-            st.markdown(f"**Local rank {item['local_rank']} · sample {f['sample']} · {f['id']}**")
-            st.caption(f"Source indices {f['representative']} · {m['cells']} cells · mean NRMS {m['mean_nrms_percent']:.2f}% · minimum paired support {m['minimum_paired_support']}. Local tile priority only; other groups are not calibrated for comparison.")
-        if len(registry['entries'])>5:st.caption('Five findings shown here; the registry selector and complete report include all completed findings.')
-    page_header("Survey overview & QC", "Survey geometry, data completeness, and amplitude quality at a glance.")
-    base_qc=None;monitor_qc=None
-    section("Survey geometry")
-    meta = monitor_volume.metadata.source_metadata
-    inline_header_ids = meta.get("inline_ids", meta.get("inline_ids_selected", []))
-    crossline_header_ids = meta.get("crossline_ids", meta.get("crossline_ids_selected", []))
-    cols = st.columns(2)
-    metric_slots = (cols[0], cols[0], cols[1], cols[1])
-    for col,label,key in zip(metric_slots,('Baseline traces','Monitor traces','Common paired traces','Monitor-only traces'),
-        ('baseline_trace_count','monitor_trace_count','paired_trace_count','monitor_only_trace_count')):
-        count=meta.get(key)
-        if key=='monitor_trace_count' and count is None and all(isinstance(meta.get(v),int) for v in ('paired_trace_count','monitor_only_trace_count')):
-            count=meta['paired_trace_count']+meta['monitor_only_trace_count']
-        display = format_metric_count(count) if isinstance(count,int) and not isinstance(count,bool) and count >= 0 else 'N/A'
-        exact = f"Exact count: {count:,}" if isinstance(count,int) and not isinstance(count,bool) else 'Exact count unavailable'
-        col.metric(label,display,help=exact)
-    cols = st.columns(2)
-    cols[0].metric("Samples per trace", format_metric_count(baseline.shape[2]), help=f"Exact value: {baseline.shape[2]:,}")
-    cols[0].metric("Grid dimensions", " × ".join(f"{n:,}" for n in baseline.shape), help="Array order: inline × crossline × sample")
-    cols[1].metric("Inline IDs", f"{min(inline_header_ids):,}–{max(inline_header_ids):,}" if inline_header_ids else "N/A")
-    cols[1].metric("Crossline IDs", f"{min(crossline_header_ids):,}–{max(crossline_header_ids):,}" if crossline_header_ids else "N/A")
-    st.caption(f"Sample interval: {baseline_volume.metadata.sample_interval:g} {baseline_volume.metadata.sample_interval_units}. Array axes are (inline, crossline, sample); Sample Index is shown because its origin/domain is unknown.")
-    section("Data quality")
-    st.info("Full-volume QC is not scanned on dashboard startup. Bounded run support and missing-data quality are recorded in the findings registry; survey-wide repeatability remains unverified.")
-    section("Completed-tile difference distribution")
-    if guided_result is not None:
-        values=guided_result['scores']['statistical'][guided_result['valid']]
-        st.plotly_chart(go.Figure(go.Histogram(x=values,nbinsx=60,marker_color='#31edc2')).update_layout(
-            xaxis_title='Absolute Monitor − Baseline amplitude',yaxis_title='Eligible tile cells',height=350),use_container_width=True)
-        st.caption('Loaded from the completed tile artifact. This is not a survey-wide amplitude distribution or repeatability calibration.')
+        c=registry['body']['coverage']
+        st.caption(f"Completed analysis: {c['completed_tiles']}/{c['planned_tiles']} tiles · {c['eligible_center_cells']:,} eligible sample centers · tile-local ranks")
+        st.download_button('Download technical report',cached_technical_report(registry['id'],registry),file_name='reservoir-time-machine-report.md',mime='text/markdown')
     else:
-        st.info('No completed-tile amplitude-change distribution is available. Global amplitude QC requires an offline product; the dashboard does not scan both cubes to create one.')
-    section("Trace coverage")
+        st.caption("Completed analysis coverage: N/A · no valid registry loaded.")
+
+    section("Survey geometry and trace counts")
     missing = baseline_volume.missing_trace_mask
-    if missing is not None:
-        coverage = display_mask(missing, max_axis=700)
-        row_stride = max(1, int(np.ceil(missing.shape[0] / 700)))
-        col_stride = max(1, int(np.ceil(missing.shape[1] / 700)))
-        st.plotly_chart(go.Figure(go.Heatmap(z=coverage, x=np.arange(0, missing.shape[1], col_stride),
-            y=np.arange(0, missing.shape[0], row_stride), colorscale=[[0,"#333033"],[1,"#ef5747"]],
-            zmin=0,zmax=1,colorbar={"title":"Missing trace"})).update_layout(
-                xaxis_title="Crossline index", yaxis_title="Inline index", height=540), use_container_width=True)
-        st.caption("Coverage comes from the retained Baseline-grid mask. Each red display bin contains one or more absent traces; axes show the bin's starting grid indices, not geographic coordinates.")
+    exact_missing = int(np.asarray(missing).sum(dtype=np.int64)) if missing is not None else None
+    grid_cells = int(baseline.shape[0] * baseline.shape[1])
+    paired_count = grid_cells - exact_missing if exact_missing is not None else source_meta.get("paired_trace_count")
+    monitor_only_count = (int(source_meta['monitor_only_trace_count'])
+                          if monitor_only_keys is None and source_meta.get('monitor_only_trace_count') is not None
+                          else int(len(monitor_only_keys)) if monitor_only_keys is not None else None)
+    monitor_count = int(paired_count + monitor_only_count) if paired_count is not None else None
+    source_pair_count = source_meta.get("paired_trace_count")
+    source_baseline_count=source_meta.get('baseline_trace_count')
+    source_monitor_count=source_meta.get('monitor_trace_count')
+    source_monitor_only_count=source_meta.get('monitor_only_trace_count')
+    count_mismatch = any((recorded is not None and calculated is not None and int(recorded)!=int(calculated))
+        for recorded,calculated in ((source_pair_count,paired_count),(source_baseline_count,paired_count),
+            (source_monitor_count,monitor_count),(source_monitor_only_count,monitor_only_count)))
+    if count_mismatch:
+        st.error("Cache trace-count metadata conflicts with the retained missing-trace mask; coverage interpretation is paused.")
+    count_cols=st.columns(3)
+    for col,label,count in zip(count_cols,("Paired Baseline-grid traces","Missing Baseline-grid cells","Monitor-only traces"),
+                               (paired_count,exact_missing,monitor_only_count)):
+        shown=format_metric_count(int(count)) if count is not None else "N/A"
+        help_text=f"Exact count: {int(count):,}" if count is not None else "Exact count unavailable"
+        col.metric(label,shown,help=help_text)
+    cols = st.columns(3)
+    cols[0].metric("Monitor traces", format_metric_count(monitor_count) if monitor_count is not None else "N/A",
+                   help=f"Paired traces + Monitor-only traces = {monitor_count:,}" if monitor_count is not None else "Exact count unavailable")
+    cols[1].metric("Inline header IDs", f"{min(inline_header_ids):,}–{max(inline_header_ids):,}" if len(inline_header_ids) else "N/A")
+    cols[2].metric("Crossline header IDs", f"{min(crossline_header_ids):,}–{max(crossline_header_ids):,}" if len(crossline_header_ids) else "N/A")
+    st.caption(f"Grid {baseline.shape[0]:,} inline × {baseline.shape[1]:,} crossline × {baseline.shape[2]:,} samples. Sample interval {baseline_volume.metadata.sample_interval:g} {baseline_volume.metadata.sample_interval_units}; physical sample origin/domain N/A.")
+
+    section("Survey-wide Baseline / Monitor QC")
+    if qc_artifact is None:
+        if qc_artifact_error:
+            st.error(qc_artifact_error)
+        st.info("Full-survey finite-sample and amplitude QC: N/A. No matching versioned offline QC artifact is available; dashboard startup does not scan either seismic volume.")
+        st.caption("Build this product with scripts/build_survey_qc.py in a scheduled SLURM allocation; the paired cache is read-only.")
     else:
-        st.info("No missing-trace mask is available from the loaded survey metadata.")
-    with st.expander("Scientific capabilities and provenance"):
-        st.write(capabilities)
-        st.caption("Capabilities assess explicit evidence declarations, not independent certification. Cache identity includes all six cache files, source-file statistics, and small control-file hashes. Large source/cube SHA256 authentication remains unverified; physical and well registration are not inferred.")
-    with st.expander("Advanced QC diagnostics"):
-        st.write({"Baseline": base_qc, "Monitor": monitor_qc,
-                  "trace_key_pairing_verified": True,
-                  "physical_4d_registration_verified": physical_4d_registration_verified})
-    st.caption("Trace RMS divided by amplitude standard deviation is a descriptive proxy, not a calibrated SNR.")
+        def render_qc_metrics(title, report):
+            st.markdown(f"**{title}**")
+            cols=st.columns(4)
+            values=(('Finite sample support',f"{report['finite_voxels']:,} / {report['voxel_count']:,}"),
+                    ('Amplitude range',f"{report['amplitude_min']:.4g} to {report['amplitude_max']:.4g}"),
+                    ('Amplitude RMS',f"{report['amplitude_rms']:.4g}"),
+                    ('Zero-energy traces',f"{report['zero_energy_trace_count']:,}"))
+            for col,(label,value) in zip(cols,values):col.metric(label,value)
+        render_qc_metrics("Baseline",qc_artifact['baseline'])
+        render_qc_metrics("Monitor on paired Baseline grid",qc_artifact['monitor_on_paired_baseline_grid'])
+        st.caption(f"Monitor-only traces are summarized separately: RMS {qc_artifact['monitor_only']['amplitude_rms']:.4g}. "
+                   f"Paired finite-sample support: {qc_artifact['paired_sample_support']['valid_paired_samples']:,}/"
+                   f"{qc_artifact['paired_sample_support']['potential_paired_samples']:,}. Source identity and artifact checksum verified.")
+        st.caption("Amplitude RMS comparisons are descriptive only; no repeatability threshold or physical registration is established.")
+
+    section("Completed-tile seismic attributes")
+    if guided_result is not None:
+        i0,i1,x0,x1=guided_result['bounds']
+        attrs=cached_tile_attributes(dataset_cache_identity,guided_result['run_id'],guided_result['sample'],
+            tuple(guided_result['bounds']),baseline[i0:i1,x0:x1,:],monitor[i0:i1,x0:x1,:])
+        valid=np.asarray(guided_result['valid'],dtype=bool).copy()
+        valid &= np.isfinite(attrs.signed_difference) & np.isfinite(attrs.absolute_difference) & np.isfinite(attrs.nrms)
+        eligible=int(valid.sum())
+        if eligible:
+            charts=st.columns(3)
+            panels=(("Signed Monitor − Baseline","Amplitude difference (dataset units)",attrs.signed_difference),
+                    ("Absolute amplitude difference","Absolute difference (dataset units)",attrs.absolute_difference),
+                    ("Windowed NRMS","NRMS (%)",attrs.nrms))
+            for col,(title,x_title,values) in zip(charts,panels):
+                fig=go.Figure(go.Histogram(x=np.asarray(values)[valid],nbinsx=36,
+                    marker_color="#31edc2",name=title,showlegend=False))
+                fig.update_layout(template="plotly_dark",paper_bgcolor="#080d0e",plot_bgcolor="#101719",
+                    font={"color":"#ffffff","size":14},title=title,xaxis_title=x_title,
+                    yaxis_title="Eligible tile cells",height=390,margin={"l":45,"r":12,"t":60,"b":75})
+                col.plotly_chart(fig,use_container_width=True,theme=None)
+            min_support=int(np.asarray(attrs.paired_sample_count)[valid].min())
+            max_support=int(np.asarray(attrs.paired_sample_count)[valid].max())
+            st.caption(f"Population: {eligible:,} eligible cells · sample index {guided_result['sample']} · source bounds inline {i0}:{i1}, crossline {x0}:{x1} · 9-sample centered RMS/NRMS window, clipped at sample-axis ends · finite paired support {min_support}–{max_support} samples. Amplitude units are unspecified in source metadata.")
+        else:
+            st.error("The selected completed tile has no finite paired attribute values for its QC plots.")
+    else:
+        st.info("Completed-tile signed difference, absolute difference, and NRMS: N/A until a valid analysis tile is loaded.")
+
+    section("Trace coverage by SEG-Y header ID")
+    if missing is None:
+        st.error("Trace coverage figure unavailable: missing-trace mask is absent.")
+    elif count_mismatch:
+        st.error("Trace coverage figure withheld because mask and cache trace counts disagree.")
+    elif monitor_only_keys is None:
+        st.error("Trace coverage figure unavailable: Monitor-only trace-key coordinates could not be loaded.")
+    else:
+        try:
+            coverage_fig,coverage_summary=coverage_figure(missing,inline_header_ids,crossline_header_ids,
+                monitor_only_keys,max_axis=700)
+            expected_monitor_only=source_meta.get('monitor_only_trace_count')
+            if expected_monitor_only is not None and int(expected_monitor_only)!=coverage_summary['monitor_only_trace_count']:
+                raise ValueError("Monitor-only key count disagrees with cache metadata")
+            st.plotly_chart(coverage_fig,use_container_width=True,theme=None)
+            st.caption(f"Exact source counts: {coverage_summary['paired_grid_trace_count']:,} paired grid cells · "
+                f"{coverage_summary['missing_baseline_grid_count']:,} missing Baseline cells · "
+                f"{coverage_summary['monitor_only_trace_count']:,} Monitor-only traces. "
+                f"{coverage_summary['monitor_only_on_missing_baseline_cells']:,} Monitor-only keys coincide with missing Baseline cells; "
+                f"{coverage_summary['monitor_only_trace_count']-coverage_summary['monitor_only_mapped_to_baseline_axes']:,} lie outside the Baseline header-axis grid. "
+                "Red bins contain at least one missing Baseline trace; gold markers are separate Monitor-only keys. Exact counts are independent of display pooling.")
+        except (TypeError,ValueError,RuntimeError) as exc:
+            st.error(f"Trace coverage figure could not be constructed: {type(exc).__name__}. Exact trace counts above remain available.")
+
+    if registry and guided_result is not None:
+        section("Automatically detected candidates · local ranks")
+        for item in registry['entries'][:5]:
+            f=item['finding'];m=f['metrics'];loc=finding_header_location(f['representative'],inline_header_ids,crossline_header_ids,grid_shape=baseline.shape[:2])
+            line=(f"Inline {loc['inline_header_id'] if loc['inline_header_id'] is not None else 'N/A'} · "
+                  f"Crossline {loc['crossline_header_id'] if loc['crossline_header_id'] is not None else 'N/A'} · "
+                  f"Sample index {loc['sample_index']:,}")
+            st.markdown(f"**Local rank {item['local_rank']} · {line}**")
+            st.caption(f"{m['cells']:,} connected cells · signed difference {m['mean_signed_difference']:.4g} · absolute difference {m['mean_absolute_difference']:.4g} · NRMS {m['mean_nrms_percent']:.2f}% · min support {m['minimum_paired_support']}.")
+        with st.expander('Finding report · RESULT / DISCUSSION / ACTION',expanded=True):
+            render_page_report(guided_result,guided_finding,well_context,page,discovery,
+                shared_interpretation=entry['interpretation'],inline_ids=inline_header_ids,
+                crossline_ids=crossline_header_ids,grid_shape=baseline.shape[:2])
+    else:
+        st.info("No eligible candidate is available from completed analysis coverage.")
+    if registry is None or registry['body']['coverage']['pending_tiles']:
+        with st.expander('Extend analysis'):
+            st.caption('Run bounded analysis through the configured HPC workflow. Opening this page does not start analysis.')
+            template=Path(__file__).resolve().parent/'config/hpc/phase3_discovery.slurm'
+            if template.is_file():st.download_button('Download bounded analysis template',template.read_text(),file_name='phase3_discovery.slurm')
 elif page == "3D explorer":
     page_header("3D seismic explorer", "Linked inline, crossline, and sample sections intersect at the shared selected location.")
     st.caption("Drag to rotate; choose Pan in the Plotly mode bar to pan; use scroll or mode bar controls to zoom and reset the camera. Planes are display-strided; missing trace bins are conservatively shown as gaps; source arrays and analytical data remain full resolution.")
@@ -410,18 +701,22 @@ elif page == "3D explorer":
             crossline=crossline, sample=sample, missing_trace_mask=baseline_volume.missing_trace_mask,
             colorscale=color_scale, value_range=(-limit, limit),finding_context=(guided_result,guided_finding) if guided_finding else None),
             use_container_width=True, config={"scrollZoom": True, "displaylogo": False,
-                "modeBarButtonsToAdd": ["resetCameraDefault3d"]})
+                "modeBarButtonsToAdd": ["resetCameraDefault3d"]}, theme=None)
     with right:
         st.plotly_chart(volume_figure(monitor, "Monitor · orthogonal sections", inline=inline,
             crossline=crossline, sample=sample, missing_trace_mask=monitor_volume.missing_trace_mask,
             colorscale=color_scale, value_range=(-limit, limit),finding_context=(guided_result,guided_finding) if guided_finding else None),
             use_container_width=True, config={"scrollZoom": True, "displaylogo": False,
-                "modeBarButtonsToAdd": ["resetCameraDefault3d"]})
+                "modeBarButtonsToAdd": ["resetCameraDefault3d"]}, theme=None)
     inline_ids = monitor_volume.metadata.source_metadata.get("inline_ids", monitor_volume.metadata.source_metadata.get("inline_ids_selected", []))
     crossline_ids = monitor_volume.metadata.source_metadata.get("crossline_ids", monitor_volume.metadata.source_metadata.get("crossline_ids_selected", []))
     coordinate_metrics = st.columns(3)
-    coordinate_metrics[0].metric("Inline", f"{inline_ids[inline] if inline < len(inline_ids) else inline:,}")
-    coordinate_metrics[1].metric("Crossline", f"{crossline_ids[crossline] if crossline < len(crossline_ids) else crossline:,}")
+    inline_id=header_id(inline,inline_ids,expected_length=baseline.shape[0])
+    crossline_id=header_id(crossline,crossline_ids,expected_length=baseline.shape[1])
+    coordinate_metrics[0].metric("Inline header ID", f"{inline_id:,}" if inline_id is not None else "N/A",
+                                 help=f"Array index: {inline:,}")
+    coordinate_metrics[1].metric("Crossline header ID", f"{crossline_id:,}" if crossline_id is not None else "N/A",
+                                 help=f"Array index: {crossline:,}")
     coordinate_metrics[2].metric("Sample index", f"{sample:,}")
     st.caption("Header IDs are shown when supplied; sample remains an array index because sample origin and physical domain are unverified.")
 elif page == "4D comparison":
@@ -589,7 +884,7 @@ elif page == "Change detection":
                 title="Statistical screen · score is not probability",
                 xaxis_title="Crossline index", yaxis_title="Inline index", height=600,
             ),
-            use_container_width=True,
+            use_container_width=True, theme=None,
         )
         st.caption(
             f"Formula: median + {threshold_sigma:g} × 1.4826 × MAD; MAD is the median absolute deviation on the full-resolution absolute-difference plane. The multiplier changes statistical sensitivity, not geological truth."
@@ -658,25 +953,138 @@ elif page == "Change detection":
 
 elif page == "Survey transition":
     page_header("Finding-focused survey comparison", "Automatically selected evidence · synchronized sample, inline and crossline sections.")
-    if guided_finding:
-        fig=cached_finding_presentation(guided_result['run_id'],guided_finding['id'],baseline,monitor,paired_missing,guided_result,guided_finding)
-        render_presentation(registry,entry,fig)
-        st.info("The three upper panels switch between the actual Baseline and Monitor endpoints. The three lower panels keep Monitor − Baseline visible. No interpolated or invented vintages are shown.")
-        st.caption("Gold crosses identify the same valid finding member in every section; gold shading preserves selected component membership. Gray cells are missing. Endpoint scales are fixed across surveys per section (99th-percentile absolute amplitude); difference panels have separate symmetric scales in the same amplitude units. Grid indices are not physical coordinates. The animation is a bounded local presentation, not a complete 3D change history.")
+    if full_field_registry and field_entry:
+        labels_path=Path(full_field_registry['body']['provenance']['component_labels_path'])
+        labels=cached_component_labels(str(labels_path),labels_path.stat().st_size,
+            labels_path.stat().st_mtime_ns,tuple(baseline.shape))
+        selected_sample=field_finding['array_location'][2]
+        member=np.asarray(labels[:,:,selected_sample])==int(field_finding['component_label'])
+        fig=cached_animation(dataset_cache_identity,selected_sample,float(field_finding['component_label']),180,
+            baseline[:,:,selected_sample],monitor[:,:,selected_sample],member,paired_missing)
+        st.plotly_chart(fig,use_container_width=True,theme=None)
+        st.caption('Animation interpolates the measured Baseline and Monitor display endpoints; intermediate frames are not acquired vintages. The turquoise overlay is the selected connected component at this sample index.')
+    elif guided_finding:
+        presentation_key=presentation_identity(registry['id'],guided_result['run_id'],guided_finding['id'],
+            guided_result['provenance']['dataset_id'])
+        presentation_token=presentation_cache_token(presentation_cache_root,presentation_key)
+        fig=cached_finding_presentation(registry['id'],guided_result['run_id'],guided_finding['id'],
+            guided_result['provenance']['dataset_id'],str(presentation_cache_root),presentation_token)
+        if fig is None:
+            st.info("Presentation artifact is not ready yet. The validated finding and measurements remain available in the report; offline presentation generation is still pending.")
+        else:
+            render_presentation(registry,entry,fig)
+            st.info("The three upper panels switch between the actual Baseline and Monitor endpoints. The three lower panels keep Monitor − Baseline visible. No interpolated or invented vintages are shown.")
+            st.caption("Gold crosses identify the same valid finding member in every section; gold shading preserves selected component membership. Gray cells are missing. Endpoint scales are fixed across surveys per section (99th-percentile absolute amplitude); difference panels have separate symmetric scales in the same amplitude units. Grid indices are not physical coordinates. The animation is a bounded local presentation, not a complete 3D change history.")
     else:
         st.info("No eligible connected ML finding is available in the automatically inspected tile; a focused interpretation animation is not fabricated. Review the report's screening coverage, support and missing well/registration evidence.")
 
 elif page == "Well inventory":
-    page_header("Well inventory", "Inspect available well sources and source identifiers without assuming spatial alignment.")
-    st.markdown('### Evidence organized by source well identifier')
-    st.caption('Workbook identity, LAS curves/units, depth intervals and null counts are source context. Marker/checkshot/deviation records remain unassigned where their well/datum association is unresolved.')
+    page_header("Wells & reservoir evidence", "Source well data inform context; seismic ties stay disabled until references are verified.")
+    st.markdown('### Evidence by source well')
     groups=well_context.get('by_well',{})
-    for key,group in sorted(groups.items()):
-        with st.expander('Well source group · '+key):
-            st.write(group['identity_rule']);st.write(group['workbook_records'])
-            st.dataframe([{'source':log['source'],'depth_start':log.get('depth_start'),'depth_stop':log.get('depth_stop'),
-                'depth_unit':log.get('depth_unit'),**curve} for log in group['logs'] for curve in log['curves']],use_container_width=True)
-    st.write({'supporting_records':well_context.get('tables',[]),'source_errors':well_context.get('errors',[])})
+    well_keys=sorted(groups)
+    if well_keys:
+        selected_well=st.selectbox('Select source well',well_keys,key='well_evidence_selected')
+        group=groups[selected_well]
+        workbook_records=group.get('workbook_records',[])
+        if workbook_records:
+            record=workbook_records[0]
+            coordinate=record.get('coordinate_evidence',{})
+            st.markdown(f"**{record['well_id']}** · Workbook row {record['source_row']} · {coordinate.get('status','coordinate reference unavailable')}")
+        st.caption('Source-ID grouping is not a verified spatial or reservoir-zone association.')
+
+        logs=group.get('logs',[])
+        if logs:
+            st.markdown('#### Log evidence')
+            log_by_name={item['source']:item for item in logs}
+            selected_log_name=st.selectbox('LAS source',sorted(log_by_name),key='well_las_source')
+            log_summary=log_by_name[selected_log_name]
+            las_path=settings.challenge3_root/'well_data'/'las'/selected_log_name
+            try:
+                token=(str(las_path),las_path.stat().st_size,las_path.stat().st_mtime_ns)
+                las_data=cached_well_las(str(las_path),token)
+                curve_choices=[c['mnemonic'] for c in las_data['curves'] if c['mnemonic']!=las_data['depth_mnemonic']]
+                preferred=[name for name in ('GR_P','GR','RT_P','RT','DENS_P','DENB','PHIE','SWE','DTC_P','DTCOM') if name in curve_choices]
+                options=preferred or curve_choices
+                if options:
+                    curve_name=st.selectbox('Curve',options,key='well_las_curve')
+                    curve=next(c for c in las_data['curves'] if c['mnemonic']==curve_name)
+                    x=np.asarray(las_data['data'][curve_name],dtype=float)
+                    depth=np.asarray(las_data['data'][las_data['depth_mnemonic']],dtype=float)
+                    finite=np.isfinite(x)&np.isfinite(depth)
+                    figure=go.Figure(go.Scatter(x=x[finite],y=depth[finite],mode='lines',line={'color':'#20e0c3','width':2}))
+                    figure.update_layout(template='plotly_dark',paper_bgcolor='#080d12',plot_bgcolor='#080d12',
+                        title=f"{curve_name} · {curve['unit'] or 'unit unavailable'} · {log_summary['provenance']}",
+                        xaxis_title=f"{curve_name} ({curve['unit'] or 'unit unavailable'})",
+                        yaxis_title=f"LAS depth axis ({las_data['depth_unit'] or 'unit unavailable'}; datum unverified)",
+                        yaxis={'autorange':'reversed'},font={'color':'white'},height=540,margin={'l':60,'r':20,'t':55,'b':50})
+                    st.plotly_chart(figure,use_container_width=True,theme=None)
+                    st.caption(f"{int(finite.sum()):,}/{len(x):,} finite samples · {curve['evidence_kind']} · raw measurement status: {curve['raw_measurement_status']}")
+                st.dataframe([{key:curve[key] for key in ('mnemonic','unit','description','sample_count','null_count','evidence_kind')}
+                              for curve in las_data['curves']],use_container_width=True)
+            except (RuntimeError,OSError,ValueError,KeyError) as exc:
+                st.warning(f"LAS curve view unavailable: {type(exc).__name__}")
+
+        tables=group.get('tables',[])
+        if tables:
+            st.markdown('#### Formation, checkshot & deviation evidence')
+            table_by_name={item['source']:item for item in tables}
+            selected_table_name=st.selectbox('Source table',sorted(table_by_name),key='well_table_source')
+            table=table_by_name[selected_table_name]
+            st.caption(f"{table['category']} · {table['records']} source records · declared units {table['declared_units'] or 'N/A'} · QC: {table['quality']['status']}")
+            if table['category']=='checkshots' and table['quality']['status']=='structurally_valid_declared_checkshot_pairs':
+                rows=np.asarray([[float(v) for v in row[:2]] for row in table['raw_records']],dtype=float)
+                figure=go.Figure(go.Scatter(x=rows[:,1],y=rows[:,0],mode='lines+markers',line={'color':'#f2c14e'}))
+                figure.update_layout(template='plotly_dark',paper_bgcolor='#080d12',plot_bgcolor='#080d12',
+                    title='Source checkshot pairs · not tied to seismic samples',xaxis_title='TWT (ms)',
+                    yaxis_title='TVDSS (m; source declared)',yaxis={'autorange':'reversed'},
+                    font={'color':'white'},height=430)
+                st.plotly_chart(figure,use_container_width=True,theme=None)
+            elif table['category']=='deviations' and table['quality']['status'].startswith('depth_survey_structurally_valid'):
+                rows=np.asarray([[float(v) for v in row[:2]] for row in table['raw_records']],dtype=float)
+                figure=go.Figure(go.Scatter(x=rows[:,0],y=rows[:,1],mode='lines+markers',line={'color':'#20e0c3'}))
+                figure.update_layout(template='plotly_dark',paper_bgcolor='#080d12',plot_bgcolor='#080d12',
+                    title='Source deviation depth survey · XY trajectory unavailable',xaxis_title='MDKB (m)',
+                    yaxis_title='TVD (m; source declared)',yaxis={'autorange':'reversed'},font={'color':'white'},height=430)
+                st.plotly_chart(figure,use_container_width=True,theme=None)
+            elif table['category']=='markers' and table['ambiguous_rows']==0:
+                columns=table['columns']; name_col=next((columns.index(x) for x in ('NAME','Marker','MARKER') if x in columns),None)
+                depth_col=next((columns.index(x) for x in ('TVDSS','MDKB','TVD') if x in columns),None)
+                if name_col is not None and depth_col is not None and table['units'][depth_col]:
+                    try:
+                        marker_names=[row[name_col] for row in table['raw_records']]
+                        marker_depth=np.asarray([float(row[depth_col]) for row in table['raw_records']],dtype=float)
+                        figure=go.Figure(go.Scatter(x=marker_names,y=marker_depth,mode='markers+text',text=marker_names,
+                            textposition='top center',marker={'color':'#f2c14e','size':9}))
+                        figure.update_layout(template='plotly_dark',paper_bgcolor='#080d12',plot_bgcolor='#080d12',
+                            title='Source formation markers · seismic horizon tie unavailable',
+                            xaxis_title='Source marker name',yaxis_title=f"{columns[depth_col]} ({table['units'][depth_col]}; datum/tie unresolved)",
+                            yaxis={'autorange':'reversed'},font={'color':'white'},height=460)
+                        st.plotly_chart(figure,use_container_width=True,theme=None)
+                    except (TypeError,ValueError):
+                        st.warning('Marker depth values are incomplete or non-numeric; original records are shown below.')
+                        st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],use_container_width=True)
+                else:
+                    st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],use_container_width=True)
+            else:
+                columns=table['columns']
+                st.dataframe([dict(zip(columns,row)) for row in table['raw_records']],use_container_width=True)
+            st.caption('Marker and checkshot evidence remains contextual until CRS, datum, trajectory and seismic sample ties are verified.')
+        else:
+            st.info('N/A · no marker, checkshot or deviation file grouped under this source well.')
+    else:
+        st.info('N/A · no source well evidence is available.')
+
+    with st.expander('Association readiness'):
+        readiness=well_context.get('association_assessment',{})
+        st.markdown('**Well-to-seismic association: unavailable**')
+        st.markdown('\n'.join(f'- {item}' for item in well_context.get('missing_association_evidence',[])))
+        st.caption(readiness.get('reason','Required spatial and vertical references are unresolved.'))
+
+    st.markdown('### Shared finding context')
+    st.caption(f"{well_context['well_count']} workbook wells · {len(well_context['logs'])} LAS sources · {len(well_context['tables'])} marker/checkshot/deviation sources. Static logs do not measure temporal fluid or pressure change.")
+    if well_context.get('errors'):
+        st.warning(f"{len(well_context['errors'])} well source(s) could not be read; available evidence is preserved.")
     with st.expander('Advanced source inventory and reader diagnostics'):
         st.caption("Well coordinates, units, datums, CRS, and seismic correspondence are not inferred.")
         inventory = []
@@ -724,7 +1132,7 @@ elif page == "Well inventory":
         st.caption('Supporting marker, checkshot and deviation sources remain unassigned where an explicit well identifier/datum relationship is unresolved.')
         st.info("Well positions are not plotted because validated coordinates and a shared spatial reference have not been established.")
 
-else:
+elif page == "Evidence explanation":
     page_header("Evidence explanation", "Separate observed data, calculated attributes, statistical flags, interpretations, and hypotheses.")
     section("Selected location evidence")
     selected_base, selected_monitor = float(baseline[inline,crossline,sample]), float(monitor[inline,crossline,sample])
@@ -740,5 +1148,188 @@ else:
                   'missing_evidence':well_context['missing_association_evidence']})
         st.caption('Measured and interpreted curves are source context only. No candidate-to-well relationship is established.')
         st.write(well_context)
+    if stage3_registry:
+        st.markdown("### Saved full-field finding · deterministic evidence explanation")
+        action_findings = [item["finding"] for item in stage3_registry["qc_follow_up_actions"]]
+        candidates = action_findings or stage3_registry["historical_findings"]
+        selected_id = st.session_state.get("stage3_action_selection", candidates[0]["id"])
+        selected_stage3 = next((item for item in candidates if item["id"] == selected_id), candidates[0])
+        packet = stage3_finding_packet(selected_stage3, assessment_id=stage3_registry["id"])
+        try:
+            llm_settings = LLMSettings.from_environment()
+        except ValueError:
+            llm_settings = LLMSettings()
+            st.warning("Gemma settings are invalid; the deterministic explanation remains active.")
+        explanation_key = explanation_identity(packet, llm_settings)
+        explanations = st.session_state.setdefault("grounded_explanations", {})
+        explanation = explanations.get(explanation_key) or interpret(packet)
+        st.caption(f"Finding {selected_stage3['id']} · deterministic evidence selection · Stage 3 assessment {stage3_registry['id'][:16]}")
+        for claim in explanation["claims"]:
+            st.markdown(f"**{claim['category'].replace('_', ' ').title()}:** {claim['text']}")
+            st.caption("Evidence IDs: " + ", ".join(claim["evidence_ids"]))
+        eligible = bool(llm_settings.base_url and llm_settings.real_data_enabled)
+        if not eligible:
+            st.info("Gemma is not active: an approved endpoint and real-data sharing policy are not configured. No external request was made.")
+        authorized = st.checkbox("I authorize sending this small typed finding record to the configured Gemma service.",
+                                 key="stage3_gemma_consent", disabled=not eligible)
+        if st.button("Ask Gemma to select evidence statements", key="stage3_gemma_request",
+                     disabled=not (authorized and eligible)):
+            if transmission_allowed(packet, llm_settings, authorized=authorized):
+                result = interpret(packet, provider=GemmaFindingProvider(llm_settings), authorized=True)
+                st.session_state["grounded_explanations"][explanation_key] = result
+                explanation = result
+                st.rerun()
+            else:
+                st.warning("Transmission policy did not authorize this request; no payload was sent.")
+        st.caption("Gemma can select only constrained statements and exact supplied values. It does not validate geology; service output remains subject to human review.")
+
+else:
+    page_header("Recovery intelligence", "Evidence-led surveillance actions · no unsupported recovery targets or success probabilities.")
+    if stage3_registry is None:
+        if stage3_registry_error:
+            st.error(f"The Stage 3 assessment did not pass checksum/schema/coordinate validation ({stage3_registry_error}).")
+        else:
+            st.info("No completed Stage 3 evidence package is configured. Existing seismic views remain available.")
+    else:
+        assessment = stage3_registry["assessment"]
+        interpretation = assessment["candidate_interpretation"]
+        stage2_review = assessment["stage2_top_ten_review"]
+        consensus = assessment["consensus"]
+        section("What happened? · full-field screening, not a reservoir diagnosis")
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("Stage 2 coverage", "2,040 / 2,040 chunks")
+        candidate_voxels = (stage2_review["mad_only_voxels_in_candidate_union"]
+                            + stage2_review["three_detector_consensus_voxels_in_candidate_union"])
+        metric_cols[1].metric("Candidate voxels", f"{candidate_voxels:,}")
+        metric_cols[2].metric("Multi-model consensus voxels", f"{consensus['voxel_count']:,}")
+        metric_cols[3].metric("Verified reservoir / recovery targets", "0 / 0")
+        st.info("Trace-key pairing is available on the Baseline grid. Physical 4D registration is not verified. Sample origin and well-to-seismic tie are unresolved. Findings are seismic screening evidence; they do not establish fluid movement or remaining hydrocarbons.")
+
+        action_ids = [item["finding"]["id"] for item in stage3_registry["qc_follow_up_actions"]]
+        discovery_ids = [item["id"] for item in stage3_registry["historical_findings"]]
+        st.markdown("### Which changes matter? · first review the QC action queue")
+        if action_ids:
+            selected_id = st.selectbox("QC follow-up action", action_ids,
+                                       format_func=lambda ident: f"{ident} · review vintage repeatability / acquisition QC",
+                                       key="stage3_action_selection",
+                                       on_change=_jump_to_stage3_selection,
+                                       args=("stage3_action_selection",
+                                             {item["finding"]["id"]: item["finding"]["array_location"]
+                                              for item in stage3_registry["qc_follow_up_actions"]}))
+            selected = next(item["finding"] for item in stage3_registry["qc_follow_up_actions"]
+                            if item["finding"]["id"] == selected_id)
+            st.caption("This queue prioritizes technical validation work. It is not a recovery-target ranking.")
+        else:
+            selected_id = st.selectbox("Historical Stage 2 discovery", discovery_ids,
+                                       key="stage3_discovery_selection",
+                                       on_change=_jump_to_stage3_selection,
+                                       args=("stage3_discovery_selection",
+                                             {item["id"]: item["array_location"]
+                                              for item in stage3_registry["historical_findings"]}))
+            selected = next(item for item in stage3_registry["historical_findings"] if item["id"] == selected_id)
+
+        loc = selected["array_location"]
+        il, xl, sample_idx = map(int, loc)
+        il_id, xl_id = int(inline_header_ids[il]), int(crossline_header_ids[xl])
+        extent = selected["extent"]
+        st.markdown(f"**{selected_id}** · SEG-Y IL {il_id} · XL {xl_id} · array sample index {sample_idx} · {selected['component_voxels']:,} voxels")
+        st.caption("Sample is an array index; the TWT/depth origin is not established. Bounds below are inclusive array-index extents.")
+
+        i0, i1 = max(0, il - 48), min(baseline.shape[0], il + 49)
+        x0, x1 = max(0, xl - 48), min(baseline.shape[1], xl + 49)
+        bview = np.asarray(baseline[i0:i1, x0:x1, sample_idx])
+        mview = np.asarray(monitor[i0:i1, x0:x1, sample_idx])
+        dview = mview - bview
+        finite_pair = np.concatenate((np.abs(bview[np.isfinite(bview)]), np.abs(mview[np.isfinite(mview)])))
+        amp_scale = max(float(np.percentile(finite_pair, 99)) if finite_pair.size else 1.0, 1e-12)
+        diff_finite = np.abs(dview[np.isfinite(dview)])
+        diff_scale = max(float(np.percentile(diff_finite, 99)) if diff_finite.size else 1.0, 1e-12)
+        fig_cols = st.columns(3)
+        for col, values, title, palette, limit in (
+            (fig_cols[0], bview, "1995 Baseline", "RdBu", amp_scale),
+            (fig_cols[1], mview, "2006 Monitor", "RdBu", amp_scale),
+            (fig_cols[2], dview, "Monitor − Baseline", "RdBu", diff_scale),
+        ):
+            heat = go.Figure(go.Heatmap(z=values, x=np.asarray(crossline_header_ids[x0:x1]),
+                y=np.asarray(inline_header_ids[i0:i1]), colorscale=palette,
+                zmin=-limit if title != "Monitor − Baseline" else -limit,
+                zmax=limit, zmid=0 if title == "Monitor − Baseline" else None,
+                colorbar={"title": "Amplitude" if title != "Monitor − Baseline" else "Difference"}))
+            if int(extent[2][0]) <= sample_idx <= int(extent[2][1]):
+                shape_x0, shape_x1 = max(x0, int(extent[1][0])), min(x1 - 1, int(extent[1][1]))
+                shape_y0, shape_y1 = max(i0, int(extent[0][0])), min(i1 - 1, int(extent[0][1]))
+                if shape_x0 <= shape_x1 and shape_y0 <= shape_y1:
+                    heat.add_shape(type="rect", x0=int(crossline_header_ids[shape_x0]),
+                        x1=int(crossline_header_ids[shape_x1]), y0=int(inline_header_ids[shape_y0]),
+                        y1=int(inline_header_ids[shape_y1]), line={"color": "#32efc4", "width": 2})
+            col.plotly_chart(heat.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
+                plot_bgcolor="#101719", font={"color": "white"}, title=title,
+                xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID", height=390),
+                use_container_width=True, theme=None)
+        st.caption("Panels are a local sample-index slice centered on the selected component representative. Baseline and Monitor share a color range; the signed difference is zero-centered. The turquoise rectangle shows the component's bounding extent, not exact voxel membership.")
+        local_attributes = cached_tile_attributes(dataset_cache_identity, "stage3-local-view", sample_idx,
+            (i0, i1, x0, x1), baseline[i0:i1, x0:x1, :], monitor[i0:i1, x0:x1, :])
+        attribute_panels = st.columns(2)
+        for col, values, title, palette, limits in (
+            (attribute_panels[0], local_attributes.nrms, "Local 9-sample NRMS (%)", "Viridis", None),
+            (attribute_panels[1], local_attributes.paired_sample_count, "Paired sample support / 9", "Viridis", (0, 9)),
+        ):
+            shown_values = np.asarray(values)
+            if shown_values.ndim == 3:
+                shown_values = shown_values[:, :, sample_idx]
+            heat = go.Figure(go.Heatmap(z=shown_values,
+                x=np.asarray(crossline_header_ids[x0:x1]), y=np.asarray(inline_header_ids[i0:i1]),
+                colorscale=palette, zmin=limits[0] if limits else None,
+                zmax=limits[1] if limits else None, colorbar={"title": title}))
+            col.plotly_chart(heat.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
+                plot_bgcolor="#101719", font={"color": "white"}, title=title,
+                xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID", height=340),
+                use_container_width=True, theme=None)
+        st.caption("These are bounded 9-sample local attributes computed from finite paired source samples for the displayed crop only. They are not the stored full-field attribute volumes.")
+
+        attrs = selected
+        metric_cols = st.columns(5)
+        metric_cols[0].metric("Mean signed Δ", f"{attrs['signed_difference_mean']:.4g}")
+        metric_cols[1].metric("Mean |Δ|", f"{attrs['absolute_difference_mean']:.4g}")
+        metric_cols[2].metric("Mean NRMS", f"{attrs['nrms_mean_percent']:.2f}%")
+        metric_cols[3].metric("Min paired support", f"{attrs['min_paired_support']}/9")
+        metric_cols[4].metric("Stage 3 capped index", f"{stage3_registry['stage3_indices'][selected_id]:.3f}")
+        st.markdown("#### Why this is not yet a recovery target")
+        st.write(f"The historical Stage 2 list is **MAD-only** for all ten entries; four classical detector threshold flags are zero for each. The Stage 3 support correction caps support at 1.0 and preserves the Stage 2 archive. The corrected index is still a screening index, not a probability. The consensus set contains {consensus['voxel_count']:,} Mahalanobis/PCA/GMM voxels and is concentrated near the high-crossline boundary; it does not establish independent geological confirmation.")
+        st.markdown("#### What to investigate next")
+        st.write(selected.get("geophysics_next_action", "Review registration, repeatability and acquisition/processing metadata."))
+        st.write(selected.get("petrophysics_next_action", "No verified well or stratigraphic tie; establish coordinate, datum and sample mapping before correlation."))
+        st.write(selected.get("reservoir_engineering_next_action", "Gather production, injection and pressure evidence only after a spatial/interval tie is verified."))
+        with st.expander("Repeatability, detector and edge evidence"):
+            st.json({"detector_threshold_flags": selected["detector_flagged_voxels"],
+                     "edge_QC": selected["edge_qc"], "local_repeatability": selected["local_repeatability"],
+                     "alternative_explanations": selected.get("plausible_alternatives", []),
+                     "observation_confidence": selected.get("observation_confidence"),
+                     "geological_interpretation_confidence": selected.get("geological_interpretation_confidence")})
+
+        st.markdown("### Historical seismic discovery catalogue")
+        st.caption("The original Stage 2 order is retained for audit. This table is not the recovery-intelligence ranking.")
+        rows = []
+        for item in stage3_registry["historical_findings"]:
+            rows.append({"Stage 2 rank": item["rank"], "Finding": item["id"],
+                "IL": item["inline_id"], "XL": item["crossline_id"], "Sample index": item["sample_index"],
+                "Voxels": item["component_voxels"], "Mean NRMS %": item["nrms_mean_percent"],
+                "MAD only": item["mad_only"], "Edge risk": item["edge_risk"],
+                "Stage 3 index": stage3_registry["stage3_indices"][item["id"]]})
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+        st.markdown("### Where is the next recovery opportunity?")
+        st.info("Recovery Chance of Success: Not yet quantifiable. The source package has zero verified reservoir-interval associations and zero recovery opportunities supported by reservoir and production evidence. Current priorities are surveillance and data-validation actions, not drilling locations.")
+        with st.expander("Method capability and validation status"):
+            st.dataframe([
+                {"Evidence component": "Mahalanobis / PCA / Isolation Forest / GMM", "Execution": "Completed full-field", "Validation boundary": "Computational outputs completed; historical top ten has no threshold flags from these four"},
+                {"Evidence component": "MAD statistical screening", "Execution": "Completed full-field", "Validation boundary": "Screening only; no geological ground truth"},
+                {"Evidence component": "3D edge / support QC", "Execution": "Completed in Stage 2/3", "Validation boundary": "Consensus detections remain edge-sensitive"},
+                {"Evidence component": "Bayesian evidence fusion", "Execution": "Prototype code available", "Validation boundary": "No calibrated class likelihoods or posterior probability published"},
+                {"Evidence component": "3D convolutional autoencoder", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
+                {"Evidence component": "Siamese 3D CNN", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
+            ], use_container_width=True, hide_index=True)
+            st.caption("Bayesian and neural outputs are not fused into the discovery list unless independently trained/calibrated and validated. Synthetic training results, if run, are computational experiments only.")
+        st.markdown(f"**Stage 3 package** · `{stage3_registry['id'][:16]}` · {len(stage3_registry['checksums'])} checksummed artifacts · schema `{stage3_registry['schema']}`")
 
 # Autosync acceptance canary: source-only, non-functional deployment check.

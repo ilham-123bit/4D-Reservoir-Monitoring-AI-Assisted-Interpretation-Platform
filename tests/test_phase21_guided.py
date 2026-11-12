@@ -37,6 +37,8 @@ class GuidedTests(unittest.TestCase):
             report=page_report(self.result,self.finding,self.wells,page,{'sample':10})
             self.assertEqual(report['finding_id'],self.finding['id'])
             self.assertFalse(report['wells']['association_available'])
+            self.assertEqual({x['discipline'] for x in report['discipline_actions']},
+                             {'Geophysics','Petrophysics','Reservoir engineering'})
             self.assertIn('GR [API]',report['wells']['curve_types'])
             self.assertFalse(report['interpretation']['provenance']['external_transmission'])
         packet=finding_packet(self.result,self.finding,well_context=self.wells)
@@ -69,6 +71,36 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(report['errors'],[{'source':'bad.txt','type':'ValueError'}])
             self.assertFalse(report['association_available'])
 
+    def test_well_tables_group_by_source_id_and_keep_association_gates(self):
+        from reservoir_time_machine.data_ingest.well_evidence import well_evidence_summary
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); wd=root/'well_data'
+            for category in ('checkshots','deviations','markers'):(wd/category).mkdir(parents=True)
+            (wd/'checkshots/Well-1_Checkshot.txt').write_text(
+                '# TVDSS (m)\n# TWT (ms)\n100 120\n200 240\n')
+            (wd/'deviations/Well-1_Deviation.txt').write_text(
+                '# MDKB (m)\n# TVD (m)\n# INCL\n# AZIM\n0 0 0 0\n100 99 5 90\n')
+            (wd/'markers/Well-1_Markers.txt').write_text(
+                '# NAME\n# MDKB (m)\n# TVDSS (m)\nTop_A 100\nBase_A 200 190\n')
+            report=well_evidence_summary(root)
+            group=report['by_well']['well-1']
+            self.assertEqual(len(group['tables']),3)
+            checkshot=next(x for x in group['tables'] if x['category']=='checkshots')
+            self.assertEqual(checkshot['quality']['status'],'structurally_valid_declared_checkshot_pairs')
+            deviation=next(x for x in group['tables'] if x['category']=='deviations')
+            self.assertEqual(deviation['quality']['status'],'depth_survey_structurally_valid_orientation_units_missing')
+            marker=next(x for x in group['tables'] if x['category']=='markers')
+            self.assertEqual(marker['quality']['status'],'unresolved_variable_width_rows')
+            self.assertEqual(marker['ambiguous_rows'],1)
+            self.assertEqual(marker['raw_records'][0][0],'Top_A')
+            self.assertFalse(report['association_available'])
+            self.assertFalse(report['association_assessment']['spatial_well_to_seismic'])
+            packet=finding_packet(self.result,self.finding,well_context=report)
+            well_fact=next(item for item in packet.facts if item['name']=='available_well_context')
+            self.assertIn('checkshots',well_fact['value']['table_record_counts_by_category'])
+            self.assertTrue(well_fact['value']['static_well_data_is_not_temporal_change_evidence'])
+            self.assertLess(len(packet.to_json().encode()),24000)
+
     def test_dashboard_opens_report_and_focused_animation_without_manual_search(self):
         import streamlit as st
         from streamlit.testing.v1 import AppTest
@@ -84,25 +116,34 @@ class GuidedTests(unittest.TestCase):
         def capture_module(fig,*args,**kwargs):figures.append(fig);return original_module(fig,*args,**kwargs)
         def capture(obj,fig,*args,**kwargs):figures.append(fig);return original(obj,fig,*args,**kwargs)
         st.cache_resource.clear();st.cache_data.clear()
-        with tempfile.TemporaryDirectory() as tmp,patch.dict('os.environ',{'RTM_CHALLENGE3_ROOT':tmp,'RTM_CACHE_DIR':tmp,'RTM_ML_CACHE_DIR':'','RTM_LLM_BASE_URL':'','RTM_LLM_ALLOW_CHALLENGE3':'0','RTM_LLM_DATA_POLICY_CONFIRMED':'0','RTM_FINDINGS_REGISTRY':tmp+'/registry/registry.json'}), \
+        with tempfile.TemporaryDirectory() as tmp,patch.dict('os.environ',{'RTM_CHALLENGE3_ROOT':tmp,'RTM_CACHE_DIR':tmp,'RTM_ML_CACHE_DIR':'','RTM_LLM_BASE_URL':'','RTM_LLM_ALLOW_CHALLENGE3':'0','RTM_LLM_DATA_POLICY_CONFIRMED':'0','RTM_FINDINGS_REGISTRY':tmp+'/registry/registry.json','RTM_PRESENTATION_CACHE':tmp+'/presentations'}), \
             patch('reservoir_time_machine.data_ingest.manifest.challenge3_availability',return_value={'available':True,'well_inventory_available':True}), \
             patch('reservoir_time_machine.data_ingest.cache_identity.paired_cache_identity',return_value='guided-ui'), \
             patch('reservoir_time_machine.data_ingest.segy_loader.load_challenge3_paired_volumes',return_value=volumes), \
             patch('reservoir_time_machine.data_ingest.well_evidence.well_evidence_summary',return_value=self.wells), \
             patch('reservoir_time_machine.llm.gemma_client._client',side_effect=AssertionError('External request forbidden')) as client, \
             patch.object(DeltaGenerator,'plotly_chart',capture),patch.object(st,'plotly_chart',capture_module):
-            from reservoir_time_machine.analysis.registry import save_registry
+            from reservoir_time_machine.analysis.registry import save_registry,load_registry
+            from reservoir_time_machine.visualization.finding_animation import finding_animation
+            from reservoir_time_machine.visualization.presentation_cache import presentation_identity,save_presentation
             seed=run_preliminary(self.b,self.m,self.missing,dataset_id='guided-ui',sample=10,bounds=(0,64,0,64))
-            save_registry([seed],tmp+'/registry',dataset_id='guided-ui',shape=list(self.b.shape),
+            registry_path=save_registry([seed],tmp+'/registry',dataset_id='guided-ui',shape=list(self.b.shape),
                 plan=[{'sample':10,'bounds':[0,64,0,64]}],wells=self.wells)
+            registry=load_registry(registry_path,'guided-ui',list(self.b.shape))
+            for entry in registry['entries']:
+                identity=presentation_identity(registry['id'],entry['run_id'],entry['finding']['id'],'guided-ui')
+                save_presentation(finding_animation(self.b,self.m,self.missing,entry['result'],entry['finding']),
+                                  tmp+'/presentations',identity)
             app=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'),default_timeout=30).run()
             self.assertFalse(list(app.exception))
             focus=[app.session_state[k] for k in ('shared_inline','shared_crossline','shared_sample')]
             for page in ('Overview and QC','3D explorer','4D comparison','Change detection','Survey transition','Well inventory','Evidence explanation'):
                 figures.clear();app.sidebar.radio[0].set_value(page).run()
                 self.assertFalse(list(app.exception),page)
-                self.assertTrue(any('Automated evidence report' in v.value for v in app.markdown),page)
-                self.assertTrue(any('1 workbook records' in v.value for v in app.markdown),page)
+                self.assertTrue(any('**RESULT ·**' in v.value for v in app.markdown),page)
+                self.assertTrue(any('**DISCUSSION ·**' in v.value for v in app.markdown),page)
+                self.assertTrue(any('**ACTION ·**' in v.value for v in app.markdown),page)
+                self.assertTrue(any('Well-to-seismic association is unavailable' in v.value for v in app.markdown),page)
                 if page=='Survey transition':
                     self.assertTrue(any(len(v.frames)==2 for v in figures),str([(v.layout.title.text,len(v.frames)) for v in figures])+str([v.value for v in app.info]))
                     fig=next(v for v in figures if len(v.frames)==2)

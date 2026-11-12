@@ -91,7 +91,14 @@ class PresentationWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=save_registry(results,tmp+'/completed',dataset_id='carousel',shape=list(b.shape),
                 plan=[{'sample':10,'bounds':list(r['bounds'])} for r in results],wells=well_evidence_summary(tmp))
-            with patch.dict('os.environ',{'RTM_CHALLENGE3_ROOT':tmp,'RTM_CACHE_DIR':tmp,'RTM_FINDINGS_REGISTRY':str(path),'RTM_LLM_BASE_URL':'','RTM_LLM_ALLOW_CHALLENGE3':'0','RTM_LLM_DATA_POLICY_CONFIRMED':'0'}), \
+            from reservoir_time_machine.analysis.registry import load_registry
+            from reservoir_time_machine.visualization.finding_animation import finding_animation
+            from reservoir_time_machine.visualization.presentation_cache import presentation_identity,save_presentation
+            registry=load_registry(path,'carousel',list(b.shape));presentation_root=tmp+'/presentations'
+            for entry in registry['entries']:
+                identity=presentation_identity(registry['id'],entry['run_id'],entry['finding']['id'],'carousel')
+                save_presentation(finding_animation(b,m,mask,entry['result'],entry['finding']),presentation_root,identity)
+            with patch.dict('os.environ',{'RTM_CHALLENGE3_ROOT':tmp,'RTM_CACHE_DIR':tmp,'RTM_FINDINGS_REGISTRY':str(path),'RTM_PRESENTATION_CACHE':presentation_root,'RTM_LLM_BASE_URL':'','RTM_LLM_ALLOW_CHALLENGE3':'0','RTM_LLM_DATA_POLICY_CONFIRMED':'0'}), \
                 patch('reservoir_time_machine.data_ingest.manifest.challenge3_availability',return_value={'available':True,'well_inventory_available':False}), \
                 patch('reservoir_time_machine.data_ingest.cache_identity.paired_cache_identity',return_value='carousel'), \
                 patch('reservoir_time_machine.data_ingest.segy_loader.load_challenge3_paired_volumes',return_value=volumes), \
