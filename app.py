@@ -2280,8 +2280,25 @@ elif page == "Reservoir Decisions":
     else:
         _decisions = []
         _decision_source = "none"
+    # Rank spatially coherent response evidence, not the historical MAD or QC
+    # queue. The resulting index is NOT reservoir prospect probability.
+    _ranked_decisions = []
+    for _possible in _decisions[:10]:
+        _candidate_point = _possible.get("array_location", _possible.get("representative"))
+        if not _candidate_point:
+            continue
+        try:
+            _result = cached_coherent_response(
+                dataset_cache_identity, _possible["id"], tuple(_candidate_point),
+                baseline, monitor, paired_missing, inline_header_ids, crossline_header_ids)
+            _record = candidate_briefing(_possible, _result, source=_decision_source)
+        except (ValueError, KeyError, IndexError, TypeError):
+            continue
+        _ranked_decisions.append((_record["investigation_priority_index"], _possible))
+    _ranked_decisions.sort(key=lambda pair: (-pair[0], pair[1]["id"]))
+    _decisions = [item for _, item in _ranked_decisions]
     if not _decisions:
-        st.info("No source-linked candidate catalogue is active. See Confidence & QC.")
+        st.info("No source-linked candidate can be evaluated from the paired seismic.")
     else:
         _idx = {item["id"]: item for item in _decisions}
         _ids = list(_idx)
