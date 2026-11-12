@@ -918,6 +918,11 @@ if page == "Reservoir Decision Briefing":
             f"· required separation {_focused['required_contrast_pp'] if _focused['required_contrast_pp'] is not None else 'N/A'} pp "
             "· paired seismic, not a saturation or sweep fraction."
         )
+        _models = _focused["ml_evidence"]
+        st.caption(
+            f"ML flags on original component: {_models['n_models_with_flags']} detector(s) · "
+            "statistical agreement, not fluid classification."
+        )
         with st.expander("Investigation catalogue and confidence", expanded=False):
             st.dataframe([{
                 "Priority": i+1, "Finding": rec["id"],
@@ -2359,6 +2364,10 @@ elif page == "Reservoir Decisions":
                     f"quieter {_quiet['median_nrms_percent']:.1f}% NRMS "
                     f"at IL {_quiet['center_segy']['inline_id']}/XL {_quiet['center_segy']['crossline_id']}."
                 )
+            st.caption(
+                f"ML source support: {_brief['ml_evidence']['n_models_with_flags']} "
+                "component detector(s) flagged. Not a geological probability."
+            )
             st.markdown("### Development options — evidence gates")
             st.dataframe([
                 {"Option": "Infill / sidetrack", "Current decision": "Conditional only",
@@ -2618,6 +2627,7 @@ if page != "Gemma AI Copilot":
             "alternative_mechanisms": _current_brief["why"],
             "conditional_action": _current_brief["next_decision"],
             "hydrocarbon_state": _current_brief["bypassed_hydrocarbon"],
+            "source_ml_model_flags": _current_brief["ml_evidence"],
             "drilling_location": None,
         })
     with st.expander("Ask Gemma about this view", expanded=False):
