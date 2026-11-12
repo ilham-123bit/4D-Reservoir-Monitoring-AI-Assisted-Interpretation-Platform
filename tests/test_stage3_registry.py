@@ -187,7 +187,7 @@ class Stage3RegistryTests(unittest.TestCase):
                             [element.value for element in app.markdown]))
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [1, 2, 3])
         next_id = "field-00000000000000000002"
-        app.selectbox[0].set_value(next_id).run()
+        next(x for x in app.selectbox if x.label == "Source-linked investigation").set_value(next_id).run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         self.assertEqual(app.session_state["selected_finding_id"], next_id)
         self.assertEqual(app.session_state["stage3_finding_selection"], next_id)
