@@ -34,6 +34,9 @@ from reservoir_time_machine.analysis.recovery_intelligence import (
     select_investigation,
     reservoir_evolution_readiness,
 )
+from reservoir_time_machine.analysis.conditional_reservoir import (
+    conditional_i100_locations, evaluate_conditional_window,
+)
 from reservoir_time_machine.analysis.technical_report import report_markdown
 from reservoir_time_machine.visualization.presentation import select_entry,render_presentation
 import json,re
@@ -718,6 +721,79 @@ if page not in ("Overview and QC", "Reservoir Command Center"):
 if page == "Reservoir Command Center":
     page_header("Angsi Field · 4D Reservoir Intelligence",
                 "Baseline 1995 → Monitor 2006 · evidence-led surveillance and recovery investigation")
+
+    # Run only bounded paired-array reads around source-local I-100 well markers.
+    # This is a conditional physical-tie experiment, NOT a verified reservoir target.
+    st.markdown("### I-100 reservoir-window hypothesis · actual 4D measurements")
+    st.caption("Tested well marker and coordinate assumptions, not a mapped or verified reservoir horizon.")
+    try:
+        well_matrix = well_context.get("well_evidence_matrix") or build_well_evidence_matrix(well_context)
+        source_baseline_file = settings.challenge3_root / "volumes" / "Challenge3_Baseline_FilteredScaled_FullStack.sgy"
+        header_token = (str(source_baseline_file), source_baseline_file.stat().st_size,
+                        source_baseline_file.stat().st_mtime_ns)
+        baseline_header_geometry = cached_header_geometry(str(source_baseline_file), header_token)
+        projected_wells = conditionally_map_well_coordinates(
+            well_matrix, baseline_header_geometry,
+            inline_ids=np.asarray(inline_header_ids), crossline_ids=np.asarray(crossline_header_ids))
+        origin_cases = (-20.0, 0.0, 20.0)
+        scenario_results = []
+        for origin_ms in origin_cases:
+            cases = conditional_i100_locations(
+                well_matrix, projected_wells, inline_header_ids, crossline_header_ids,
+                baseline.shape[2], sample_interval_ms=2.0, origin_ms=origin_ms)
+            for case in cases:
+                measured = evaluate_conditional_window(
+                    baseline, monitor, paired_missing, case,
+                    spatial_radius=2, half_window=10, max_lag_samples=4,
+                    control_distance_samples=64)
+                scenario_results.append((case, measured))
+        if not scenario_results:
+            st.info("No compatible source-local I-100 windows fall within the proposed Baseline header frame. No reservoir interval was invented.")
+        else:
+            st.warning("Conditional test only: Baseline header coordinates, workbook X/Y frame, sample-zero TWT, well-to-seismic tie and physical 4D registration are not independently verified.")
+            def _display_number(value, places=1):
+                return round(float(value), places) if value is not None and np.isfinite(value) else "—"
+            st.dataframe([
+                {"Well": case["well_id"], "Assumed sample origin (ms)": case["assumed_time_origin_ms"],
+                 "IL": case["segy_inline_id"], "XL": case["segy_crossline_id"],
+                 "Sample index": case["array_location"][2],
+                 "Measured NRMS (%)": _display_number(result["observed"]["nrms_percent"]),
+                 "Local off-window NRMS (%)": _display_number(result["off_window_control_nrms_median_percent"]),
+                 "Best local lag (samples)": result["best_local_lag_samples"],
+                 "NRMS after tested lag (%)": _display_number(result["best_lag_nrms_percent"]),
+                 "Paired support (%)": _display_number(100 * result["observed"]["support_fraction"]),
+                 "Comparison": result["response_vs_off_window_controls"]}
+                for case, result in scenario_results
+            ], hide_index=True, use_container_width=True)
+            zero_origin = [(case, result) for case, result in scenario_results
+                           if case["assumed_time_origin_ms"] == 0.0]
+            if zero_origin:
+                selected_well = st.selectbox(
+                    "Inspect conditional I-100 well evidence",
+                    [case["well_id"] for case, _ in zero_origin],
+                    key="command_conditional_i100_well")
+                focused_case, focused_result = next(
+                    (case, result) for case, result in zero_origin
+                    if case["well_id"] == selected_well)
+                st.markdown("**Measured:** " + focused_result["interpretation"])
+                st.markdown("**Next scientific test:** " + focused_result["next_test"])
+                st.caption("The ±20 ms origin sensitivity cases above are not acquired vintages. Best local lag is a diagnostic, not a registered seismic correction. Off-window comparisons are not known unproduced reservoir controls.")
+                with st.expander("Show 1995 / 2006 / 4D seismic at this conditional I-100 location"):
+                    ci, cx, cs = focused_case["array_location"]
+                    conditional_display = {
+                        "array_location": [ci, cx, cs],
+                        "extent": [[max(0, ci-2), min(baseline.shape[0]-1, ci+2)],
+                                   [max(0, cx-2), min(baseline.shape[1]-1, cx+2)],
+                                   [max(0, cs-10), min(baseline.shape[2]-1, cs+10)]]}
+                    _render_finding_views(
+                        conditional_display, baseline=baseline, monitor=monitor,
+                        missing_mask=paired_missing, inline_ids=inline_header_ids,
+                        crossline_ids=crossline_header_ids,
+                        dataset_identity=dataset_cache_identity,
+                        run_id="conditional-i100-" + selected_well)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        st.info(f"Bounded I-100 well/seismic experiment could not be completed: {type(exc).__name__}: {exc}")
+
     if stage3_registry:
         assessment = stage3_registry["assessment"]
         consensus = assessment.get("consensus", {})
