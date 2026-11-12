@@ -19,6 +19,26 @@ MAX_ASSESSMENT_BYTES = 2_000_000
 MAX_MANIFEST_BYTES = 16_000
 
 
+def detector_threshold_flag_count(item: dict) -> int:
+    """Return the total detector flag count across supported Stage 3 schemas.
+
+    Stage 3 assessments store per-detector counts as a mapping, while older
+    presentation records may contain a scalar total. Keep this conversion at
+    the registry boundary so callers never try to cast a mapping to ``int``.
+    """
+    value = item.get("detector_threshold_flagged_voxels",
+                     item.get("detector_flagged_voxels", 0))
+    if isinstance(value, dict):
+        counts = value.values()
+    elif type(value) is int:
+        counts = (value,)
+    else:
+        raise ValueError("Detector threshold flags must be an integer or per-detector mapping")
+    if any(type(count) is not int or count < 0 for count in counts):
+        raise ValueError("Detector threshold flag counts must be non-negative integers")
+    return sum(counts)
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:

@@ -29,7 +29,10 @@ from reservoir_time_machine.analysis.preliminary import run_preliminary, VERSION
 from reservoir_time_machine.visualization.preliminary import render_preliminary
 from reservoir_time_machine.analysis.registry import load_registry
 from reservoir_time_machine.analysis.full_field_registry import load_full_field_registry
-from reservoir_time_machine.analysis.stage3_registry import load_stage3_registry
+from reservoir_time_machine.analysis.stage3_registry import (
+    detector_threshold_flag_count,
+    load_stage3_registry,
+)
 from reservoir_time_machine.analysis.recovery_intelligence import (
     default_investigation_id,
     investigation_records,
@@ -232,7 +235,7 @@ def bounded_ml_evidence(allow_external=False):
                 'crossline ID':p['crossline_id'],'sample index':p['sample_index'],
                 'mean |difference|':m['mean_absolute_difference'],'mean NRMS (%)':m['mean_nrms_percent'],
                 'edge risk':f['edge_artifact_risk'],'priority':f['investigation_priority_index']})
-        st.dataframe(rows,use_container_width=True,hide_index=True)
+        st.dataframe(rows,width="stretch",hide_index=True)
         try:
             labels_path=Path(full_field_registry['body']['provenance']['component_labels_path'])
             labels=cached_component_labels(str(labels_path),labels_path.stat().st_size,
@@ -245,7 +248,7 @@ def bounded_ml_evidence(allow_external=False):
                 zmin=0,zmax=1,showscale=False,name='Selected 3D component'))
             st.plotly_chart(fig.update_layout(template='plotly_dark',paper_bgcolor='#080d0e',plot_bgcolor='#101719',
                 font={'color':'#fff'},title='Selected finding footprint · sample plane',
-                xaxis_title='SEG-Y crossline ID',yaxis_title='SEG-Y inline ID',height=480),use_container_width=True,theme=None)
+                xaxis_title='SEG-Y crossline ID',yaxis_title='SEG-Y inline ID',height=480),width="stretch",theme=None)
         except (OSError,ValueError,KeyError,TypeError):
             st.error('The validated component map could not be opened; finding measurements remain available.')
         st.write(field_finding['detectors'])
@@ -371,7 +374,7 @@ def _render_finding_views(finding, *, baseline, monitor, missing_mask, inline_id
                 fig.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
                     plot_bgcolor="#101719", font={"color": "white"}, title=title,
                     xaxis_title=xlabel, yaxis_title=ylabel, height=390)
-                col.plotly_chart(fig, use_container_width=True, theme=None)
+                col.plotly_chart(fig, width="stretch", theme=None)
             if orientation == "sample":
                 support = np.asarray(attrs.paired_sample_count)
                 nrms = np.asarray(attrs.nrms)
@@ -387,7 +390,7 @@ def _render_finding_views(finding, *, baseline, monitor, missing_mask, inline_id
                         colorbar={"title": title})).update_layout(template="plotly_dark",
                         paper_bgcolor="#080d0e", plot_bgcolor="#101719", font={"color": "white"},
                         title=title, xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID",
-                        height=330), use_container_width=True, theme=None)
+                        height=330), width="stretch", theme=None)
                 st.caption("NRMS and support are calculated on the displayed spatial crop only, from finite paired samples. The turquoise outline is the component bounding extent, not exact membership.")
 
 
@@ -792,7 +795,7 @@ if page == "Reservoir Command Center":
                  "Paired support (%)": _display_number(100 * result["observed"]["support_fraction"], 2),
                  "Comparison": result["response_vs_off_window_controls"]}
                 for case, result in scenario_results
-            ], hide_index=True, use_container_width=True)
+            ], hide_index=True, width="stretch")
             st.markdown("#### Ranked next investigations · evidence actions, not recovery targets")
             for action in conditional_follow_up_actions(scenario_results):
                 st.markdown(f"**{action['rank']}. {action['action']}**")
@@ -901,7 +904,7 @@ if page == "Reservoir Command Center":
                         key=f"command_action_{item['id']}",
                         on_click=_select_stage3_finding,
                         args=(item["id"], stage3_locations),
-                        use_container_width=True,
+                        width="stretch",
                     )
             _render_finding_views(finding, baseline=baseline, monitor=monitor,
                 missing_mask=paired_missing, inline_ids=inline_header_ids,
@@ -920,7 +923,7 @@ if page == "Reservoir Command Center":
                 {"Method": "3D convolutional autoencoder", "Angsi status": "Architecture/trainer available; no trained or validated Angsi checkpoint"},
                 {"Method": "Siamese 3D CNN", "Angsi status": "Architecture/trainer available; no trained or validated Angsi checkpoint"},
                 {"Method": "Edge and coverage QC", "Angsi status": "Completed Stage 2/3 QC; consensus remains edge-sensitive"},
-            ], use_container_width=True, hide_index=True)
+            ], width="stretch", hide_index=True)
     elif full_field_registry and field_finding:
         st.info("Validated full-field findings registry loaded. The Stage 3 QC action package is not configured; this record is shown as seismic screening, not recovery intelligence.")
         bounded_ml_evidence()
@@ -1053,7 +1056,7 @@ elif page == "Overview and QC":
                 fig.update_layout(template="plotly_dark",paper_bgcolor="#080d0e",plot_bgcolor="#101719",
                     font={"color":"#ffffff","size":14},title=title,xaxis_title=x_title,
                     yaxis_title="Eligible tile cells",height=390,margin={"l":45,"r":12,"t":60,"b":75})
-                col.plotly_chart(fig,use_container_width=True,theme=None)
+                col.plotly_chart(fig,width="stretch",theme=None)
             min_support=int(np.asarray(attrs.paired_sample_count)[valid].min())
             max_support=int(np.asarray(attrs.paired_sample_count)[valid].max())
             st.caption(f"Population: {eligible:,} eligible cells · sample index {guided_result['sample']} · source bounds inline {i0}:{i1}, crossline {x0}:{x1} · 9-sample centered RMS/NRMS window, clipped at sample-axis ends · finite paired support {min_support}–{max_support} samples. Amplitude units are unspecified in source metadata.")
@@ -1076,7 +1079,7 @@ elif page == "Overview and QC":
             expected_monitor_only=source_meta.get('monitor_only_trace_count')
             if expected_monitor_only is not None and int(expected_monitor_only)!=coverage_summary['monitor_only_trace_count']:
                 raise ValueError("Monitor-only key count disagrees with cache metadata")
-            st.plotly_chart(coverage_fig,use_container_width=True,theme=None)
+            st.plotly_chart(coverage_fig,width="stretch",theme=None)
             st.caption(f"Exact source counts: {coverage_summary['paired_grid_trace_count']:,} paired grid cells · "
                 f"{coverage_summary['missing_baseline_grid_count']:,} missing Baseline cells · "
                 f"{coverage_summary['monitor_only_trace_count']:,} Monitor-only traces. "
@@ -1125,7 +1128,7 @@ elif page == "3D discovery map":
                 int(item.get("crossline_id", crossline_header_ids[array_location[1]])),
                 int(array_location[2]), int(item.get("component_voxels", 0)),
                 float(item.get("edge_risk", item.get("edge_artifact_risk", 0.0))),
-                int(item.get("detector_threshold_flagged_voxels", 0)),
+                detector_threshold_flag_count(item),
             ])
             colors.append(float(item.get("edge_risk", item.get("edge_artifact_risk", 0.0))))
             symbols.append("diamond" if item["id"] in action_ids else "circle")
@@ -1188,7 +1191,7 @@ elif page == "3D discovery map":
             scene={"xaxis_title": "Crossline array index", "yaxis_title": "Inline array index",
                    "zaxis_title": "Sample array index", "aspectmode": "data"},
             legend={"orientation": "h"})
-        event = st.plotly_chart(fig, use_container_width=True, theme=None,
+        event = st.plotly_chart(fig, width="stretch", theme=None,
             config={"scrollZoom": True, "displaylogo": False},
             on_select="rerun", selection_mode="points", key="stage3_discovery_map")
         points = getattr(getattr(event, "selection", None), "points", []) or []
@@ -1221,13 +1224,13 @@ elif page == "3D explorer":
         st.plotly_chart(volume_figure(baseline, "Baseline · orthogonal sections", inline=inline,
             crossline=crossline, sample=sample, missing_trace_mask=baseline_volume.missing_trace_mask,
             colorscale=color_scale, value_range=(-limit, limit),finding_context=(guided_result,guided_finding) if guided_finding else None),
-            use_container_width=True, config={"scrollZoom": True, "displaylogo": False,
+            width="stretch", config={"scrollZoom": True, "displaylogo": False,
                 "modeBarButtonsToAdd": ["resetCameraDefault3d"]}, theme=None)
     with right:
         st.plotly_chart(volume_figure(monitor, "Monitor · orthogonal sections", inline=inline,
             crossline=crossline, sample=sample, missing_trace_mask=monitor_volume.missing_trace_mask,
             colorscale=color_scale, value_range=(-limit, limit),finding_context=(guided_result,guided_finding) if guided_finding else None),
-            use_container_width=True, config={"scrollZoom": True, "displaylogo": False,
+            width="stretch", config={"scrollZoom": True, "displaylogo": False,
                 "modeBarButtonsToAdd": ["resetCameraDefault3d"]}, theme=None)
     inline_ids = monitor_volume.metadata.source_metadata.get("inline_ids", monitor_volume.metadata.source_metadata.get("inline_ids_selected", []))
     crossline_ids = monitor_volume.metadata.source_metadata.get("crossline_ids", monitor_volume.metadata.source_metadata.get("crossline_ids_selected", []))
@@ -1297,7 +1300,7 @@ elif page == "4D comparison":
                 zmin=0, zmax=1, opacity=.72, showscale=False,
                 name="Missing paired trace coverage"))
         col.plotly_chart(section_fig.update_layout(
-            title=title, xaxis_title=x_title, yaxis_title=y_title, height=540), use_container_width=True)
+            title=title, xaxis_title=x_title, yaxis_title=y_title, height=540), width="stretch")
     inline_id = int(inline_header_ids[inline]); crossline_id = int(crossline_header_ids[crossline])
     section(f"Selected investigation · SEG-Y IL {inline_id} · XL {crossline_id} · Sample index {sample}")
     base_amp, mon_amp = float(baseline[inline, crossline, sample]), float(monitor[inline, crossline, sample])
@@ -1348,7 +1351,7 @@ elif page == "Change detection":
             "SEG-Y IL": item["inline_id"], "SEG-Y XL": item["crossline_id"],
             "sample index": item["sample_index"], "MAD only": item["mad_only"],
             "edge risk": item["edge_risk"], "voxel count": item["component_voxels"]}
-            for item in stage3_registry["historical_findings"]], use_container_width=True, hide_index=True)
+            for item in stage3_registry["historical_findings"]], width="stretch", hide_index=True)
         st.info("No full-field recovery inference is validated. Use Recovery intelligence for QC/surveillance actions; use Expert diagnostics only for bounded manual sensitivity checks.")
     elif full_field_registry:
         bounded_ml_evidence()
@@ -1424,7 +1427,7 @@ elif page == "Expert diagnostics":
                 title="Statistical screen · score is not probability",
                 xaxis_title="Crossline index", yaxis_title="Inline index", height=600,
             ),
-            use_container_width=True, theme=None,
+            width="stretch", theme=None,
         )
         st.caption(
             f"Formula: median + {threshold_sigma:g} × 1.4826 × MAD; MAD is the median absolute deviation on the full-resolution absolute-difference plane. The multiplier changes statistical sensitivity, not geological truth."
@@ -1443,11 +1446,11 @@ elif page == "Expert diagnostics":
             diagnostics = st.columns(2)
             diagnostics[0].plotly_chart(go.Figure(go.Bar(x=(edges[:-1]+edges[1:])/2, y=counts,
                 marker_color="#e34b3e")).update_layout(title="Absolute-difference distribution · display sample",
-                xaxis_title="Absolute difference", yaxis_title="Sample count", height=340), use_container_width=True)
+                xaxis_title="Absolute difference", yaxis_title="Sample count", height=340), width="stretch")
             if zones:
                 diagnostics[1].plotly_chart(go.Figure(go.Histogram(x=[zone.voxel_count for zone in zones],
                     nbinsx=40, marker_color="#f08b53")).update_layout(title="Retained region sizes",
-                    xaxis_title="Grid cells per region", yaxis_title="Region count", height=340), use_container_width=True)
+                    xaxis_title="Grid cells per region", yaxis_title="Region count", height=340), width="stretch")
         if selected_zone is not None:
             inline, crossline = region_representative(labels, selected_zone, detection.score)
             st.markdown(f"**Region {selected_zone.label}** · {selected_zone.voxel_count:,} cells · strongest finite member Inline {inline}, Crossline {crossline}, Sample Index {sample} · mean score {selected_zone.mean_strength:.4g} · maximum {selected_zone.max_strength:.4g}")
@@ -1481,7 +1484,7 @@ elif page == "Expert diagnostics":
                     evidence_fig.add_trace(_missing_overlay_trace(missing_section, max_axis=500,
                         x_name="Crossline index", y_name="Sample Index"))
                 col.plotly_chart(evidence_fig.update_layout(
-                    title=name + " · selected inline", xaxis_title="Crossline index", yaxis_title="Sample Index", height=390), use_container_width=True)
+                    title=name + " · selected inline", xaxis_title="Crossline index", yaxis_title="Sample Index", height=390), width="stretch")
             if missing_section is not None:
                 st.caption("Gray overlays identify display bins containing one or more missing traces; they do not imply the entire bin is missing.")
         else:
@@ -1501,7 +1504,7 @@ elif page == "Survey transition":
         member=np.asarray(labels[:,:,selected_sample])==int(field_finding['component_label'])
         fig=cached_animation(dataset_cache_identity,selected_sample,float(field_finding['component_label']),180,
             baseline[:,:,selected_sample],monitor[:,:,selected_sample],member,paired_missing)
-        st.plotly_chart(fig,use_container_width=True,theme=None)
+        st.plotly_chart(fig,width="stretch",theme=None)
         st.caption('Animation interpolates the measured Baseline and Monitor display endpoints; intermediate frames are not acquired vintages. The turquoise overlay is the selected connected component at this sample index.')
     elif guided_finding:
         presentation_key=presentation_identity(registry['id'],guided_result['run_id'],guided_finding['id'],
@@ -1541,7 +1544,7 @@ elif page == "Well inventory":
             "Markers / checkshot / deviation records":f"{table_counts['markers']} / {table_counts['checkshots']} / {table_counts['deviations']}",
             "Well-to-seismic tie":"Unverified"})
     if matrix_rows:
-        st.dataframe(matrix_rows,use_container_width=True,hide_index=True)
+        st.dataframe(matrix_rows,width="stretch",hide_index=True)
     st.caption("Curve mnemonics are reported as supplied. PHIE, PERM, SWE, VOIL and VGAS are interpreted/derived source curves, not independently verified fluid or reservoir truth. Workbook X/Y values are shown as source numbers only; units, CRS and datum are unspecified.")
     try:
         ai_identity = tuple((str(p), p.stat().st_size, p.stat().st_mtime_ns)
@@ -1554,9 +1557,9 @@ elif page == "Well inventory":
             display_rows.append({"Well": item["well_id"], "Status": item["status"], "Source curves":
                 f"{item.get('sonic_curve') or '—'} × {item.get('density_curve') or '—'}",
                 "Valid samples": f"{item.get('valid_samples', 0):,} / {item.get('total_samples', 0):,}",
-                "AI median (MRayl)": round(stats["median"], 2) if stats else "—",
+                "AI median (MRayl)": f"{stats['median']:.2f}" if stats else "—",
                 "AI p10–p90 (MRayl)": f"{stats['p10']:.2f}–{stats['p90']:.2f}" if stats else "—"})
-        st.dataframe(display_rows, use_container_width=True, hide_index=True)
+        st.dataframe(display_rows, width="stretch", hide_index=True)
         st.caption("P-impedance is calculated only from same-file sonic and density curves with compatible declared units, using valid paired depth samples. It is a log-derived rock-property indicator; it does not establish a synthetic seismic tie, fluid type, or production-related change.")
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         st.info(f"Sonic-density impedance summary unavailable: {exc}")
@@ -1580,7 +1583,7 @@ elif page == "Well inventory":
                      if projected[row["well_id"]].get("conditional_crossline_id") is not None else "—",
                      "Within Baseline header axes": projected[row["well_id"]].get("inside_header_axis_extent", "—")}
                     for row in evidence_matrix]
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, width="stretch", hide_index=True)
             monitor_fit = monitor_geometry.get("affine_geometry", {})
             monitor_r2 = monitor_fit.get("holdout_r2_x_y", [None, None])
             monitor_error = monitor_fit.get("holdout_error_coordinate_units_unknown", {}).get("p95")
@@ -1601,7 +1604,7 @@ elif page == "Well inventory":
                         "Array sample if sample 0 = 0 ms and 2 ms interval": int(round(twt / 2))})
         if conditional_marker_rows:
             st.markdown("### Conditional I-100 marker/sample comparison")
-            st.dataframe(conditional_marker_rows, use_container_width=True, hide_index=True)
+            st.dataframe(conditional_marker_rows, width="stretch", hide_index=True)
             st.caption("The TWT values are well-local interpolations from each well's source-declared TVDSS/TWT checkshot. Sample values are a sensitivity case only (zero-origin assumption); the SEG-Y domain origin and marker-to-seismic tie are not verified.")
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         st.info(f"Header-only conditional coordinate comparison unavailable: {exc}")
@@ -1641,10 +1644,10 @@ elif page == "Well inventory":
                         xaxis_title=f"{curve_name} ({curve['unit'] or 'unit unavailable'})",
                         yaxis_title=f"LAS depth axis ({las_data['depth_unit'] or 'unit unavailable'}; datum unverified)",
                         yaxis={'autorange':'reversed'},font={'color':'white'},height=540,margin={'l':60,'r':20,'t':55,'b':50})
-                    st.plotly_chart(figure,use_container_width=True,theme=None)
+                    st.plotly_chart(figure,width="stretch",theme=None)
                     st.caption(f"{int(finite.sum()):,}/{len(x):,} finite samples · {curve['evidence_kind']} · raw measurement status: {curve['raw_measurement_status']}")
                 st.dataframe([{key:curve.get(key) for key in ('mnemonic','unit','description','sample_count','null_count','finite_count','finite_min','finite_median','finite_max','evidence_kind','raw_measurement_status','value_quality_flags')}
-                              for curve in log_summary['curves']],use_container_width=True)
+                              for curve in log_summary['curves']],width="stretch")
                 st.caption("Finite ranges are source-file summaries, not validated reservoir distributions. Values flagged as outside declared fraction bounds or extreme finite interpreted values need source-encoding review before petrophysical use.")
             except (RuntimeError,OSError,ValueError,KeyError) as exc:
                 st.warning(f"LAS curve view unavailable: {type(exc).__name__}")
@@ -1663,14 +1666,14 @@ elif page == "Well inventory":
                     title='Source checkshot pairs · not tied to seismic samples',xaxis_title='TWT (ms)',
                     yaxis_title='TVDSS (m; source declared)',yaxis={'autorange':'reversed'},
                     font={'color':'white'},height=430)
-                st.plotly_chart(figure,use_container_width=True,theme=None)
+                st.plotly_chart(figure,width="stretch",theme=None)
             elif table['category']=='deviations' and table['quality']['status'].startswith('depth_survey_structurally_valid'):
                 rows=np.asarray([[float(v) for v in row[:2]] for row in table['raw_records']],dtype=float)
                 figure=go.Figure(go.Scatter(x=rows[:,0],y=rows[:,1],mode='lines+markers',line={'color':'#20e0c3'}))
                 figure.update_layout(template='plotly_dark',paper_bgcolor='#080d12',plot_bgcolor='#080d12',
                     title='Source deviation depth survey · XY trajectory unavailable',xaxis_title='MDKB (m)',
                     yaxis_title='TVD (m; source declared)',yaxis={'autorange':'reversed'},font={'color':'white'},height=430)
-                st.plotly_chart(figure,use_container_width=True,theme=None)
+                st.plotly_chart(figure,width="stretch",theme=None)
             elif table['category']=='markers' and table['ambiguous_rows']==0:
                 columns=table['columns']; name_col=next((columns.index(x) for x in ('NAME','Marker','MARKER') if x in columns),None)
                 depth_col=next((columns.index(x) for x in ('TVDSS','MDKB','TVD') if x in columns),None)
@@ -1684,15 +1687,15 @@ elif page == "Well inventory":
                             title='Source formation markers · seismic horizon tie unavailable',
                             xaxis_title='Source marker name',yaxis_title=f"{columns[depth_col]} ({table['units'][depth_col]}; datum/tie unresolved)",
                             yaxis={'autorange':'reversed'},font={'color':'white'},height=460)
-                        st.plotly_chart(figure,use_container_width=True,theme=None)
+                        st.plotly_chart(figure,width="stretch",theme=None)
                     except (TypeError,ValueError):
                         st.warning('Marker depth values are incomplete or non-numeric; original records are shown below.')
-                        st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],use_container_width=True)
+                        st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],width="stretch")
                 else:
-                    st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],use_container_width=True)
+                    st.dataframe([dict(zip(table['columns'],row)) for row in table['raw_records']],width="stretch")
             else:
                 columns=table['columns']
-                st.dataframe([dict(zip(columns,row)) for row in table['raw_records']],use_container_width=True)
+                st.dataframe([dict(zip(columns,row)) for row in table['raw_records']],width="stretch")
             st.caption('Marker and checkshot evidence remains contextual until CRS, datum, trajectory and seismic sample ties are verified.')
         else:
             st.info('N/A · no marker, checkshot or deviation file grouped under this source well.')
@@ -1704,14 +1707,14 @@ elif page == "Well inventory":
         deviation_relationship=selected_matrix.get("marker_deviation_relationship",{})
         st.markdown("#### Well-local marker/deviation relationship")
         if deviation_relationship.get("markers"):
-            st.dataframe(deviation_relationship["markers"],use_container_width=True,hide_index=True)
+            st.dataframe(deviation_relationship["markers"],width="stretch",hide_index=True)
             st.caption(deviation_relationship.get("limitation","This remains a source-well relationship, not a seismic tie."))
         else:
             st.info(deviation_relationship.get("reason","No compatible marker/deviation pair is available."))
         relationship=selected_matrix.get("marker_checkshot_relationship",{})
         st.markdown("#### Well-local marker/checkshot relationship")
         if relationship.get("markers"):
-            st.dataframe(relationship["markers"],use_container_width=True,hide_index=True)
+            st.dataframe(relationship["markers"],width="stretch",hide_index=True)
             st.caption(f"Linear interpolation only within source checkshot coverage {relationship['checkshot_tvdss_range_m']} m TVDSS / {relationship['checkshot_twt_range_ms']} ms TWT. {relationship.get('limitation','')}")
         else:
             st.info(relationship.get("reason","No compatible well-local marker/checkshot pair is available."))
@@ -1735,7 +1738,7 @@ elif page == "Well inventory":
                                   "available": (settings.challenge3_root / relative).is_file()})
         inventory.insert(0, {"data_type": "well inventory workbook", "relative_path": "well_data/Challenge3_WellList_Information.xlsx",
                              "available": (settings.challenge3_root / "well_data/Challenge3_WellList_Information.xlsx").is_file()})
-        st.dataframe(inventory, use_container_width=True)
+        st.dataframe(inventory, width="stretch")
         workbook_path = settings.challenge3_root / "well_data/Challenge3_WellList_Information.xlsx"
         if workbook_path.is_file():
             from reservoir_time_machine.data_ingest.well_information import inspect_well_information
@@ -1743,7 +1746,7 @@ elif page == "Well inventory":
                 workbook_report = inspect_well_information(workbook_path, header_row=3, max_column=13)
                 st.markdown("**Well-list workbook structure**")
                 st.dataframe([{"sheet": sheet["sheet"], "source columns": ", ".join(sheet["columns"]),
-                               "header row": sheet["header_row"], "data rows": sheet["data_rows"]} for sheet in workbook_report["sheets"]], use_container_width=True)
+                               "header row": sheet["header_row"], "data rows": sheet["data_rows"]} for sheet in workbook_report["sheets"]], width="stretch")
             except (RuntimeError, OSError, ValueError) as exc:
                 st.info(f"Workbook structure is unavailable: {type(exc).__name__}")
         available_tables = [row["relative_path"] for row in inventory if row["available"] and row["data_type"] in ("checkshots", "deviations", "markers")]
@@ -1753,7 +1756,7 @@ elif page == "Well inventory":
             try:
                 table = read_well_table(settings.challenge3_root / selected_file)
                 st.caption(f"Source: {table.source_file}. Source declarations and values are retained; missing trailing fields are blank. Units are reported only when explicitly declared in comments.")
-                st.dataframe([dict(zip(table.columns, row)) for row in table.rows], use_container_width=True)
+                st.dataframe([dict(zip(table.columns, row)) for row in table.rows], width="stretch")
                 st.caption(f"Header origin: {table.header_origin}; source units: {dict(zip(table.columns, table.units))}; variable-width source rows: {table.row_width_mismatch_count}. Declared columns: {table.declared_columns}. Short rows leave depth-column semantics unresolved; raw lines and source line numbers are preserved by the reader.")
             except (OSError, UnicodeError, ValueError) as exc:
                 st.error(f"Could not read the selected table: {type(exc).__name__}")
@@ -1765,7 +1768,7 @@ elif page == "Well inventory":
                 las_report = inspect_las(settings.challenge3_root / selected_las)
                 st.markdown(f"**{las_report['well_id'] or 'Well identifier unavailable'}** · {las_report['provenance']} · {las_report['sample_count']:,} samples · depth reference {las_report['depth_mnemonic'] or 'unspecified'} ({las_report['depth_unit'] or 'unit unavailable'})")
                 st.dataframe([{key: curve[key] for key in ("mnemonic", "unit", "description", "sample_count", "null_count")}
-                              for curve in las_report["curves"]], use_container_width=True)
+                              for curve in las_report["curves"]], width="stretch")
             except (RuntimeError, OSError, ValueError) as exc:
                 st.info(f"LAS metadata is unavailable: {type(exc).__name__}")
         st.markdown('### Organized well-source evidence')
@@ -1901,7 +1904,7 @@ else:
             col.plotly_chart(heat.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
                 plot_bgcolor="#101719", font={"color": "white"}, title=title,
                 xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID", height=390),
-                use_container_width=True, theme=None)
+                width="stretch", theme=None)
         st.caption("Panels are a local sample-index slice centered on the selected component representative. Baseline and Monitor share a color range; the signed difference is zero-centered. The turquoise rectangle shows the component's bounding extent, not exact voxel membership.")
         local_attributes = cached_tile_attributes(dataset_cache_identity, "stage3-local-view", sample_idx,
             (i0, i1, x0, x1), baseline[i0:i1, x0:x1, :], monitor[i0:i1, x0:x1, :])
@@ -1920,7 +1923,7 @@ else:
             col.plotly_chart(heat.update_layout(template="plotly_dark", paper_bgcolor="#080d0e",
                 plot_bgcolor="#101719", font={"color": "white"}, title=title,
                 xaxis_title="SEG-Y Crossline ID", yaxis_title="SEG-Y Inline ID", height=340),
-                use_container_width=True, theme=None)
+                width="stretch", theme=None)
         st.caption("These are bounded 9-sample local attributes computed from finite paired source samples for the displayed crop only. They are not the stored full-field attribute volumes.")
 
         attrs = selected
@@ -1952,7 +1955,7 @@ else:
                 "Voxels": item["component_voxels"], "Mean NRMS %": item["nrms_mean_percent"],
                 "MAD only": item["mad_only"], "Edge risk": item["edge_risk"],
                 "Stage 3 index": stage3_registry["stage3_indices"][item["id"]]})
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
 
         st.markdown("### Where is the next recovery opportunity?")
         st.info("Recovery Chance of Success: Not yet quantifiable. The source package has zero verified reservoir-interval associations and zero recovery opportunities supported by reservoir and production evidence. Current priorities are surveillance and data-validation actions, not drilling locations.")
@@ -1963,12 +1966,12 @@ else:
             {"Question": "Depletion / fluid / pressure mechanism", "Status": evolution["statuses"]["fluid_or_pressure_mechanism"], "Current basis": "No mechanism-specific pressure, production, fluid-contact or validated rock-physics evidence."},
             {"Question": "Qualified recovery opportunities", "Status": str(evolution["statuses"]["development_opportunity_count"]), "Current basis": "None qualify in the checksummed Stage 3 assessment."},
         ]
-        st.dataframe(status_rows,use_container_width=True,hide_index=True)
+        st.dataframe(status_rows,width="stretch",hide_index=True)
         st.caption(evolution["interpretation_rule"])
         st.markdown("#### Highest-value next evidence actions")
-        st.dataframe(evolution["next_data_actions"],use_container_width=True,hide_index=True)
+        st.dataframe(evolution["next_data_actions"],width="stretch",hide_index=True)
         st.markdown("#### Discipline-specific next actions")
-        st.dataframe(evolution["discipline_actions"],use_container_width=True,hide_index=True)
+        st.dataframe(evolution["discipline_actions"],width="stretch",hide_index=True)
         with st.expander("Why reservoir mechanisms remain unassigned"):
             st.write(evolution["limitations"])
         with st.expander("Method capability and validation status"):
@@ -1979,7 +1982,7 @@ else:
                 {"Evidence component": "Bayesian evidence fusion", "Execution": "Prototype code available", "Validation boundary": "No calibrated class likelihoods or posterior probability published"},
                 {"Evidence component": "3D convolutional autoencoder", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
                 {"Evidence component": "Siamese 3D CNN", "Execution": "Architecture/training harness available", "Validation boundary": "No validated Angsi checkpoint or geological validation"},
-            ], use_container_width=True, hide_index=True)
+            ], width="stretch", hide_index=True)
             st.caption("Bayesian and neural outputs are not fused into the discovery list unless independently trained/calibrated and validated. Synthetic training results, if run, are computational experiments only.")
         st.markdown(f"**Stage 3 package** · `{stage3_registry['id'][:16]}` · {len(stage3_registry['checksums'])} checksummed artifacts · schema `{stage3_registry['schema']}`")
 

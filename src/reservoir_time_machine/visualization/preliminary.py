@@ -21,9 +21,9 @@ def render_preliminary(result, *, allow_external=False, well_context=None):
     st.caption(f"Tile {result['bounds']} · sample {result['sample']} · {int(result['valid'].sum()):,} eligible cells. "
                'Unlabeled reference; unverified registration. Results are investigation priorities, not probabilities.')
     with st.expander('Model availability and reproducibility'):
-        st.dataframe([{'model':name,**value} for name,value in result['model_status'].items()],use_container_width=True)
+        st.dataframe([{'model':name,**value} for name,value in result['model_status'].items()],width="stretch")
         st.write(result['provenance'])
-        st.dataframe(model_catalog(),use_container_width=True)
+        st.dataframe(model_catalog(),width="stretch")
     findings = result['findings']
     if not findings:
         st.info('No coherent candidates meet this tile’s criteria. This does not establish absence of reservoir change.')
@@ -39,7 +39,7 @@ def render_preliminary(result, *, allow_external=False, well_context=None):
     st.session_state['selected_preliminary_finding'] = {**finding, 'dataset_id':result['provenance']['dataset_id']}
     st.dataframe([{'finding':f['id'],'priority':round(f['priority'],4),'cells':f['metrics']['cells'],
                    'representative':str(f['representative']),'tile_edge':f['touches_tile_boundary']} for f in findings[:20]],
-                 use_container_width=True)
+                 width="stretch")
     st.write({'selected_finding':finding['id'],'source_indices':finding['representative'],
               'attributes':finding['metrics'],'support_and_disagreement':finding['method_evidence'],
               'priority_contributions':finding['priority_terms']})
@@ -51,7 +51,7 @@ def render_preliminary(result, *, allow_external=False, well_context=None):
                             x=xs+x0,y=ys+i0,showscale=False,colorscale=[[0,'#ff7047'],[1,'#ff7047']],opacity=.5))
     st.plotly_chart(fig.update_layout(title='Selected preliminary finding · source grid indices',
                     xaxis_title='Crossline source index',yaxis_title='Inline source index',height=400),
-                    use_container_width=True,theme=None)
+                    width="stretch",theme=None)
     if finding['touches_tile_boundary']:
         st.caption('Candidate intersects the tile boundary; extent may continue outside the analyzed area.')
     packet = finding_packet(result,finding,well_context=well_context)

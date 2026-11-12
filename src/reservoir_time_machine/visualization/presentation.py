@@ -56,12 +56,12 @@ def render_presentation(registry,entry,figure):
     index=st.session_state['presentation_scene']%len(scenes);title,text=scenes[index]
     st.markdown(f'## {index+1} / {len(scenes)} · {title}')
     st.write(text)
-    if index in (0,1):st.plotly_chart(scene_context(registry,entry),use_container_width=True,theme=None)
+    if index in (0,1):st.plotly_chart(scene_context(registry,entry),width="stretch",theme=None)
     # A fresh layout copy avoids mutating a cached figure as the storyboard advances.
     display=go.Figure(figure)
     endpoint=1 if index in (3,4) else 0
     frame=display.frames[endpoint]
     for target,data in zip(frame.traces,frame.data):display.data[target].update(z=data.z)
     display.update_layout(title_text=frame.layout.title.text)
-    st.plotly_chart(display,use_container_width=True,theme=None)
+    st.plotly_chart(display,width="stretch",theme=None)
     st.caption('Autoplay follows plan order and local tile rank, never a calibrated survey-wide ranking. The same registry selection updates report and section coordinates on every scene/finding change. Only measured endpoints are shown.')

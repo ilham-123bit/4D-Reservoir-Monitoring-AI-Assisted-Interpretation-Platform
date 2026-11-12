@@ -6,7 +6,10 @@ from pathlib import Path
 import unittest
 import numpy as np
 
-from reservoir_time_machine.analysis.stage3_registry import load_stage3_registry
+from reservoir_time_machine.analysis.stage3_registry import (
+    detector_threshold_flag_count,
+    load_stage3_registry,
+)
 
 
 def _write_package(tmp_path, shape=(4, 5, 6)):
@@ -55,6 +58,22 @@ def _write_package(tmp_path, shape=(4, 5, 6)):
 
 
 class Stage3RegistryTests(unittest.TestCase):
+  def test_detector_flag_count_accepts_both_stage3_mapping_fields(self):
+    self.assertEqual(detector_threshold_flag_count({
+        "detector_threshold_flagged_voxels": {"mahalanobis": 2, "pca": 1},
+        "detector_flagged_voxels": {"mahalanobis": 99},
+    }), 3)
+    self.assertEqual(detector_threshold_flag_count({
+        "detector_flagged_voxels": {"mahalanobis": 2, "gmm": 1},
+    }), 3)
+    self.assertEqual(detector_threshold_flag_count({
+        "detector_threshold_flagged_voxels": 4,
+    }), 4)
+
+  def test_detector_flag_count_rejects_invalid_counts(self):
+    with self.assertRaisesRegex(ValueError, "non-negative integers"):
+      detector_threshold_flag_count({"detector_flagged_voxels": {"gmm": -1}})
+
   def test_stage3_grounding_packet_is_deterministic_and_nonprobabilistic(self):
     from reservoir_time_machine.ai.grounding import interpret, stage3_finding_packet
     item = {"id": "field-test-grounding", "absolute_difference_mean": 2.0,

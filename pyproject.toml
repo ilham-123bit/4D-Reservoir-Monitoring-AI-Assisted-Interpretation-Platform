@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "scipy>=1.10"]
 
 [project.optional-dependencies]
-dashboard = ["streamlit>=1.32", "plotly>=5.18", "pandas>=2.0"]
+dashboard = ["streamlit>=1.53", "plotly>=5.18", "pandas>=2.0"]
 test = ["pytest>=7.0"]
 lint = ["ruff>=0.4"]
 competition-data = ["segyio>=1.9", "lasio>=0.31", "openpyxl>=3.1"]
