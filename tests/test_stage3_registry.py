@@ -162,6 +162,10 @@ class Stage3RegistryTests(unittest.TestCase):
         self.assertEqual(len(app.slider), 0, "Judge-facing startup must not expose manual coordinate sliders")
         self.assertIn("WHAT IS HAPPENING IN THE RESERVOIR?",
                       " ".join(element.value for element in app.markdown))
+        self.assertTrue(any(
+            element.label == "Selected finding · structured scientific evidence"
+            for element in app.get("expander")
+        ))
         self.assertEqual(app.session_state["selected_finding_id"],
                          app.session_state["stage3_finding_selection"])
         app.sidebar.radio[0].set_value("3D discovery map").run()

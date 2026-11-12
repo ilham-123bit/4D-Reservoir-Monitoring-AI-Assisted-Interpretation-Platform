@@ -28,6 +28,9 @@ def investigation_records(registry: dict) -> list[dict]:
     for index, finding_id in enumerate(ordered_ids):
         finding = findings[finding_id]
         action = actions_by_id.get(finding_id)
+        interpretation_record = _finding_interpretation_record(
+            finding, assessment_id=registry.get("id", "unknown"), action=action
+        )
         result.append({
             "id": finding_id,
             "kind": "qc_follow_up" if action else "historical_screening_record",
@@ -46,8 +49,81 @@ def investigation_records(registry: dict) -> list[dict]:
             },
             "recovery_opportunity": "unverified",
             "recovery_chance_of_success": "Not yet quantifiable — reservoir validation required.",
+            "interpretation_record": interpretation_record,
         })
     return result
+
+
+def _finding_interpretation_record(finding: dict, *, assessment_id: str,
+                                   action: dict | None) -> dict:
+    """Expose one source-traceable, non-probabilistic Stage 3 evidence record."""
+    flags = finding.get("detector_threshold_flagged_voxels",
+                        finding.get("detector_flagged_voxels", {}))
+    detector_flags = ({str(name): int(value) for name, value in flags.items()}
+                      if isinstance(flags, dict) else {})
+    location = finding.get("array_location", [None, None, None])
+    extent = finding.get("extent")
+    alternatives = list(finding.get("plausible_alternatives", []))
+    repeatability = finding.get("local_repeatability", {})
+    return {
+        "schema": "rtm-investigation-interpretation-1",
+        "id": finding["id"],
+        "source_assessment_id": assessment_id,
+        "source_record_rank": finding.get("rank"),
+        "priority_basis": "Stage 3 QC follow-up action" if action else "historical Stage 2 screening order",
+        "location": {
+            "inline_id": finding.get("inline_id"),
+            "crossline_id": finding.get("crossline_id"),
+            "sample_index": finding.get("sample_index", location[2] if len(location) == 3 else None),
+            "array_location": list(location),
+            "extent_array_bounds_inclusive": extent,
+            "extent_semantics": "component bounding extent; exact membership is in the protected label map",
+        },
+        "observed": {
+            "signed_monitor_minus_baseline_mean_source_units": finding.get("signed_difference_mean"),
+            "absolute_difference_mean_source_units": finding.get("absolute_difference_mean"),
+            "nrms_mean_percent": finding.get("nrms_mean_percent"),
+            "baseline_rms_mean_source_units": finding.get("rms_baseline_mean"),
+            "monitor_rms_mean_source_units": finding.get("rms_monitor_mean"),
+            "monitor_to_baseline_rms_ratio": finding.get("monitor_to_baseline_rms_ratio"),
+            "normalized_difference_mean": finding.get("normalized_difference_mean"),
+            "component_voxels": finding.get("component_voxels"),
+            "source_amplitude_units": "unspecified",
+            "sample_domain": "array sample index; absolute time/depth origin unverified",
+        },
+        "model_evidence": {
+            "mad_only": bool(finding.get("mad_only", False)),
+            "mad_member_fraction": finding.get("data_support", {}).get("MAD_member_fraction"),
+            "detector_threshold_flagged_voxels": detector_flags,
+            "detector_score_means_nonprobabilistic": finding.get("detector_score_means_nonprobabilistic", {}),
+        },
+        "data_quality": {
+            "minimum_paired_sample_support": finding.get("min_paired_support"),
+            "edge_risk": finding.get("edge_risk", finding.get("edge_artifact_risk")),
+            "edge_qc": finding.get("edge_qc", {}),
+            "local_repeatability": repeatability,
+            "physical_4d_registration": "unverified",
+            "trace_pairing": "exact Baseline-grid trace-key pairing; not physical registration",
+        },
+        "conditional_interpretation": finding.get(
+            "finding_specific_observation",
+            "Observed component-scale paired-array difference; geological cause is unresolved.",
+        ),
+        "alternatives": alternatives or [
+            "Registration, phase, wavelet, amplitude-scaling, acquisition, processing, or noise differences remain possible alternatives."
+        ],
+        "confidence": {
+            "seismic_observation": finding.get("observation_confidence", "Not assessed"),
+            "geological_interpretation": finding.get("geological_interpretation_confidence", "Unresolved"),
+        },
+        "reservoir_relevance": "Unverified; no validated reservoir interval or well-to-seismic association is available.",
+        "recovery_status": "Investigation record only; no recovery opportunity or drilling target is established.",
+        "next_tests": {
+            "geophysics": finding.get("geophysics_next_action", "Validate registration and repeatability."),
+            "petrophysics": finding.get("petrophysics_next_action", "Verify well and depth/time references before correlation."),
+            "reservoir_engineering": finding.get("reservoir_engineering_next_action", "Obtain interval-linked production and pressure evidence before recovery interpretation."),
+        },
+    }
 
 
 def default_investigation_id(records: list[dict]) -> str | None:

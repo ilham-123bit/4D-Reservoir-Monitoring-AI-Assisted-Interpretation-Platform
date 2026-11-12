@@ -906,6 +906,39 @@ if page == "Reservoir Command Center":
                         args=(item["id"], stage3_locations),
                         width="stretch",
                     )
+            record = selected.get("interpretation_record", {})
+            if record:
+                observed = record["observed"]
+                def _record_number(value, places=3):
+                    return f"{float(value):.{places}f}" if value is not None else "N/A"
+                with st.expander("Selected finding · structured scientific evidence", expanded=False):
+                    st.caption(
+                        f"Record `{record['id']}` · assessment `{record['source_assessment_id'][:16]}` · "
+                        f"SEG-Y IL {record['location']['inline_id']} / XL {record['location']['crossline_id']} · "
+                        f"array sample {record['location']['sample_index']}"
+                    )
+                    values = st.columns(4)
+                    values[0].metric("Signed Monitor − Baseline", _record_number(
+                        observed["signed_monitor_minus_baseline_mean_source_units"], 3),
+                        help="Stored amplitude units are unspecified.")
+                    values[1].metric("Mean NRMS", _record_number(observed["nrms_mean_percent"], 2), "%")
+                    values[2].metric("Component size", format_metric_count(observed["component_voxels"]))
+                    values[3].metric("Minimum paired support", record["data_quality"]["minimum_paired_sample_support"] or "N/A")
+                    st.markdown("**Observed:** " + str(record["conditional_interpretation"]))
+                    st.markdown("**Conditional interpretation:** spatially coherent paired-array difference; cause is unresolved and all historical top-ten records are MAD-only screening candidates.")
+                    st.markdown("**Alternatives:** " + " ".join(record["alternatives"]))
+                    st.markdown(
+                        f"**Confidence:** seismic observation — {record['confidence']['seismic_observation']} "
+                        f"Geological interpretation — {record['confidence']['geological_interpretation']}"
+                    )
+                    st.markdown("**Recovery relevance:** " + record["recovery_status"])
+                    with st.expander("Model, repeatability, coverage and next-test details"):
+                        st.json({
+                            "model_evidence": record["model_evidence"],
+                            "data_quality": record["data_quality"],
+                            "reservoir_relevance": record["reservoir_relevance"],
+                            "next_tests": record["next_tests"],
+                        })
             _render_finding_views(finding, baseline=baseline, monitor=monitor,
                 missing_mask=paired_missing, inline_ids=inline_header_ids,
                 crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
