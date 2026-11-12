@@ -158,7 +158,12 @@ class Stage3RegistryTests(unittest.TestCase):
                 side_effect=AssertionError("Streamlit navigation must not fit models")):
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
-        self.assertEqual(app.sidebar.radio[0].value, "Reservoir Command Center")
+        self.assertEqual(app.sidebar.radio[0].value, "HOME — Reservoir Intelligence")
+        self.assertEqual(app.sidebar.radio[0].options, [
+            "HOME — Reservoir Intelligence", "01 — Confidence & QC",
+            "02 — 3D Reservoir", "03 — 4D Reservoir Evolution",
+            "04 — Geology & Wells", "05 — Development Studio",
+        ])
         self.assertEqual(len(app.slider), 0, "Judge-facing startup must not expose manual coordinate sliders")
         self.assertIn("WHAT IS HAPPENING IN THE RESERVOIR?",
                       " ".join(element.value for element in app.markdown))
@@ -168,11 +173,13 @@ class Stage3RegistryTests(unittest.TestCase):
         ))
         self.assertEqual(app.session_state["selected_finding_id"],
                          app.session_state["stage3_finding_selection"])
-        app.sidebar.radio[0].set_value("3D discovery map").run()
-        self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
-        self.assertEqual(len(app.slider), 0)
-        app.sidebar.radio[0].set_value("Recovery intelligence").run()
-        self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
+        for route in app.sidebar.radio[0].options:
+            app.sidebar.radio[0].set_value(route).run()
+            self.assertFalse(list(app.exception), f"{route}: {[e.message for e in app.exception]}")
+            self.assertEqual(len(app.slider), 0, f"{route} must not expose coordinate sliders")
+            self.assertTrue(any(
+                element.label == "Ask Gemma about this view" for element in app.get("expander")
+            ), f"{route} must embed the contextual Copilot")
         text = "\n".join(element.value for element in app.markdown)
         self.assertIn("Recovery intelligence", text)
         self.assertIn("Recovery Chance of Success: Not yet quantifiable", " ".join(x.value for x in app.info))
@@ -185,22 +192,23 @@ class Stage3RegistryTests(unittest.TestCase):
         self.assertEqual(app.session_state["selected_finding_id"], next_id)
         self.assertEqual(app.session_state["stage3_finding_selection"], next_id)
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
-        app.sidebar.radio[0].set_value("Well inventory").run()
+        app.sidebar.radio[0].set_value("04 — Geology & Wells").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         self.assertTrue(any("Eight-well evidence matrix" in value for value in
                             [element.value for element in app.markdown]))
         self.assertEqual(len(app.slider), 0)
-        app.sidebar.radio[0].set_value("4D comparison").run()
+        app.sidebar.radio[0].set_value("03 — 4D Reservoir Evolution").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         self.assertTrue(any(
             element.label == "Local structural-continuity screening"
             for element in app.get("expander")
         ))
         self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
-        app.sidebar.radio[0].set_value("Evidence explanation").run()
+        app.sidebar.radio[0].set_value("01 — Confidence & QC").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
-        self.assertTrue(any("No external request was made" in value for value in
-                            [item.value for item in app.info]))
+        self.assertTrue(any(
+            element.label == "Ask Gemma about this view" for element in app.get("expander")
+        ))
       st.cache_resource.clear()
       st.cache_data.clear()
 

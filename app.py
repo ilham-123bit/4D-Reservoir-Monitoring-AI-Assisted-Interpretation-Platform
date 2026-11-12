@@ -300,7 +300,8 @@ def _render_finding_views(finding, *, baseline, monitor, missing_mask, inline_id
                           crossline_ids, dataset_identity, run_id="stage3-selection"):
     """Render bounded, synchronized slices around the selected component bounds."""
     il, xl, sample_index = map(int, finding["array_location"])
-    extent = finding.get("extent", [[il, il], [xl, xl], [sample_index, sample_index]])
+    extent = finding.get("extent", finding.get("extent_in_array_indices",
+        [[il, il], [xl, xl], [sample_index, sample_index]]))
     i0 = max(0, int(extent[0][0]) - 24)
     i1 = min(baseline.shape[0], int(extent[0][1]) + 25)
     x0 = max(0, int(extent[1][0]) - 24)
@@ -447,16 +448,20 @@ crossline_header_ids=source_meta.get('crossline_ids',source_meta.get('crossline_
 
 # Load only completed, versioned results. Model fitting is never a startup side effect.
 registry=None;registry_error=None;guided_result=None;guided_finding=None
-registry_value=os.environ.get('RTM_FINDINGS_REGISTRY')
-if registry_value is None:
-    config=Path.home()/'.config/reservoir-time-machine/runtime.json'
-    try:
-        if config.exists():
-            if config.stat().st_size>8000:raise ValueError('Runtime config too large')
-            values=json.loads(config.read_text())
-            if set(values)!={'findings_registry'} or not isinstance(values['findings_registry'],str):raise ValueError('Invalid runtime config')
-            registry_value=values['findings_registry']
-    except (OSError,ValueError,TypeError):registry_error='Invalid runtime registry configuration'
+runtime_values={}
+runtime_config=Path.home()/'.config/reservoir-time-machine/runtime.json'
+try:
+    if runtime_config.exists():
+        if runtime_config.stat().st_size>8000:raise ValueError('Runtime config too large')
+        runtime_values=json.loads(runtime_config.read_text())
+        allowed_runtime_keys={'findings_registry','full_field_registry'}
+        if (not isinstance(runtime_values,dict) or not set(runtime_values)<=allowed_runtime_keys
+                or any(not isinstance(value,str) or not value.strip() for value in runtime_values.values())):
+            raise ValueError('Invalid runtime config')
+except (OSError,ValueError,TypeError):
+    registry_error='Invalid runtime registry configuration'
+    runtime_values={}
+registry_value=os.environ.get('RTM_FINDINGS_REGISTRY') or runtime_values.get('findings_registry')
 registry_path=Path(registry_value or str(Path.home()/'.reservoir_time_machine/analysis/registry.json')).expanduser()
 presentation_cache_root=Path(os.environ.get(
     'RTM_PRESENTATION_CACHE',str(registry_path.parent/'presentations'))).expanduser()
@@ -498,7 +503,7 @@ if registry_path.is_file():
             (hashlib.sha256(registry_bytes).hexdigest(),artifact_stats))
     except (ValueError,OSError,KeyError,TypeError) as exc:registry_error=type(exc).__name__
 full_field_registry=None;full_field_registry_error=None;field_entry=None;field_finding=None
-full_field_registry_value=os.environ.get('RTM_FULL_FIELD_REGISTRY')
+full_field_registry_value=os.environ.get('RTM_FULL_FIELD_REGISTRY') or runtime_values.get('full_field_registry')
 if full_field_registry_value:
     field_path=Path(full_field_registry_value).expanduser().resolve()
     try:
@@ -633,12 +638,23 @@ if qc_artifact_path.is_file():
         qc_artifact_error = "Survey QC artifact failed source, version, or checksum validation."
 
 with st.sidebar:
-    st.header("Workspace")
-    page = st.radio("Workspace", ["Reservoir Command Center", "Gemma AI Copilot", "4D comparison", "3D discovery map", "3D explorer",
-                                   "Recovery intelligence", "Change detection", "Overview and QC",
-                                   "Survey transition", "Well inventory", "Evidence explanation",
-                                   "Expert diagnostics"], index=0,
-                    label_visibility="collapsed", key="workspace_page")
+    st.header("RESERVOIR TIME MACHINE")
+    page_group = st.radio("Workspace", [
+        "HOME — Reservoir Intelligence",
+        "01 — Confidence & QC",
+        "02 — 3D Reservoir",
+        "03 — 4D Reservoir Evolution",
+        "04 — Geology & Wells",
+        "05 — Development Studio",
+    ], index=0, label_visibility="collapsed", key="workspace_page")
+    page = {
+        "HOME — Reservoir Intelligence": "Reservoir Command Center",
+        "01 — Confidence & QC": "Overview and QC",
+        "02 — 3D Reservoir": "3D discovery map",
+        "03 — 4D Reservoir Evolution": "4D comparison",
+        "04 — Geology & Wells": "Well inventory",
+        "05 — Development Studio": "Recovery intelligence",
+    }[page_group]
     if full_field_registry and full_field_registry['entries']:
         current=field_entry
         st.markdown(f"**Full-volume finding {current['rank']} / {len(full_field_registry['entries'])}**")
@@ -1326,7 +1342,8 @@ elif page == "3D discovery map":
             y=[item["array_location"][0] for item in map_records],
             z=[item["array_location"][2] for item in map_records],
             customdata=custom, mode="markers+text",
-            text=[f"{item['rank']}" for item in map_records], textposition="top center",
+            text=[f"{item.get('rank', index + 1)}" for index, item in enumerate(map_records)],
+            textposition="top center",
             marker={"size": 8, "color": colors, "colorscale": "Turbo", "cmin": 0, "cmax": 1,
                     "colorbar": {"title": "Edge risk"}, "symbol": symbols,
                     "line": {"color": "#f4ffff", "width": 1}},
@@ -1362,7 +1379,7 @@ elif page == "3D discovery map":
                 hovertemplate="Masked Baseline-grid bin<br>array IL %{y} · array XL %{x}<extra></extra>"))
         selected = next((item for item in map_records
                          if item["id"] == st.session_state.get("selected_finding_id")), map_records[0])
-        extent = selected.get("extent")
+        extent = selected.get("extent", selected.get("extent_in_array_indices"))
         if extent and len(extent) == 3:
             il0, il1 = map(int, extent[0]); xl0, xl1 = map(int, extent[1]); s0, s1 = map(int, extent[2])
             corners = [(x, y, z) for x in (xl0, xl1) for y in (il0, il1) for z in (s0, s1)]
@@ -1393,7 +1410,11 @@ elif page == "3D discovery map":
                 selected = next(item for item in map_records if item["id"] == selected_id)
         chosen = selected
         st.markdown(f"**Selected {chosen['id']}** · SEG-Y IL {int(chosen.get('inline_id', inline_header_ids[chosen['array_location'][0]]))} · XL {int(chosen.get('crossline_id', crossline_header_ids[chosen['array_location'][1]]))} · sample index {int(chosen['array_location'][2])}")
-        st.caption(f"Bounding extent only: inline {chosen['extent'][0]} · crossline {chosen['extent'][1]} · sample index {chosen['extent'][2]}. Exact component-membership voxels are not exposed by the validated Stage 3 package.")
+        chosen_extent = chosen.get("extent", chosen.get("extent_in_array_indices"))
+        if chosen_extent and len(chosen_extent) == 3:
+            st.caption(f"Bounding extent only: inline {chosen_extent[0]} · crossline {chosen_extent[1]} · sample index {chosen_extent[2]}. Exact component-membership voxels are not exposed by this record.")
+        else:
+            st.caption("Representative location only; this record does not provide component bounds or exact membership.")
         _render_finding_views(chosen, baseline=baseline, monitor=monitor,
             missing_mask=paired_missing, inline_ids=inline_header_ids,
             crossline_ids=crossline_header_ids, dataset_identity=dataset_cache_identity,
@@ -2216,3 +2237,51 @@ else:
         st.markdown(f"**Stage 3 package** · `{stage3_registry['id'][:16]}` · {len(stage3_registry['checksums'])} checksummed artifacts · schema `{stage3_registry['schema']}`")
 
 # Autosync acceptance canary: source-only, non-functional deployment check.
+
+# Keep the Copilot attached to every one of the six judge-facing views. The
+# evidence packet is bounded to the current selected record, the selected grid
+# coordinate, and the already checksummed I-100 summary; it never reads a cube.
+if page != "Gemma AI Copilot":
+    _copilot_records = st.session_state.get("rtm_copilot_records", [])
+    _copilot_sha = None
+    _copilot_path = os.environ.get("RTM_CONDITIONAL_I100_EVIDENCE")
+    if _copilot_path and not _copilot_records:
+        try:
+            _copilot_cache_identity, _ = paired_cache_provenance(cache_directory)
+            _copilot_evidence = load_conditional_i100_evidence(
+                _copilot_path, expected_data_identity=_copilot_cache_identity,
+                expected_shape=baseline.shape, inline_ids=inline_header_ids,
+                crossline_ids=crossline_header_ids,
+            )
+            _copilot_records = _copilot_evidence["records"]
+            _copilot_sha = _copilot_evidence["sha256"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            st.caption(f"Conditional well evidence is not available to this view ({type(exc).__name__}).")
+    _copilot_context = build_copilot_context(
+        selected=selected_investigation, scenario_records=_copilot_records,
+        evidence_sha256=_copilot_sha,
+    )
+    _view_point = [int(inline), int(crossline), int(sample)]
+    _view_baseline = float(baseline[tuple(_view_point)])
+    _view_monitor = float(monitor[tuple(_view_point)])
+    _view_valid = bool(
+        not paired_missing[_view_point[0], _view_point[1]]
+        and np.isfinite(_view_baseline) and np.isfinite(_view_monitor)
+    )
+    _view_inline_id = header_id(_view_point[0], inline_header_ids, expected_length=baseline.shape[0])
+    _view_crossline_id = header_id(_view_point[1], crossline_header_ids, expected_length=baseline.shape[1])
+    _copilot_context["evidence"].append({
+        "id": "active-view-paired-sample",
+        "category": "measured_view_context",
+        "page": str(page_group),
+        "array_location": _view_point,
+        "segy_inline_id": _view_inline_id,
+        "segy_crossline_id": _view_crossline_id,
+        "sample_axis": "array sample index; physical domain/origin unknown",
+        "paired_trace_valid": _view_valid,
+        "baseline_amplitude_source_units_unspecified": _view_baseline if _view_valid else None,
+        "monitor_amplitude_source_units_unspecified": _view_monitor if _view_valid else None,
+        "monitor_minus_baseline_source_units_unspecified": _view_monitor - _view_baseline if _view_valid else None,
+    })
+    with st.expander("Ask Gemma about this view", expanded=False):
+        render_gemma_copilot(_copilot_context)

@@ -142,7 +142,9 @@ class FullFieldRegistryTests(unittest.TestCase):
                 location=[app.session_state[k] for k in ('shared_inline','shared_crossline','shared_sample')]
                 self.assertEqual(location,[1,2,3])
                 self.assertTrue(any('field-test-0001' in str(x.value) for x in app.markdown))
-                for page in ['3D explorer','4D comparison','Change detection','Survey transition','Well inventory','Evidence explanation']:
+                for page in ['HOME — Reservoir Intelligence','01 — Confidence & QC',
+                             '02 — 3D Reservoir','03 — 4D Reservoir Evolution',
+                             '04 — Geology & Wells','05 — Development Studio']:
                     app.sidebar.radio[0].set_value(page).run()
                     self.assertFalse(list(app.exception),page+': '+str([x.message for x in app.exception]))
                     self.assertEqual([app.session_state[k] for k in ('shared_inline','shared_crossline','shared_sample')],location)
