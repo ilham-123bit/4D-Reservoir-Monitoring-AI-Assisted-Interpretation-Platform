@@ -13,11 +13,12 @@ def _write_package(tmp_path, shape=(4, 5, 6)):
     shape = list(shape)
     records = []
     for rank in range(1, 11):
-        il, xl, sample = 1, 2, 3
+        il, xl, sample = ((1, 2, 3) if rank == 1 else
+                          (rank % shape[0], (rank + 1) % shape[1], rank % shape[2]))
         records.append({
             "rank": rank, "id": f"field-{rank:020d}", "array_location": [il, xl, sample],
-            "inline_id": 101, "crossline_id": 202, "sample_index": sample,
-            "extent": [[1, 1], [2, 2], [3, 3]], "component_voxels": 1,
+            "inline_id": 100 + il, "crossline_id": 200 + xl, "sample_index": sample,
+            "extent": [[il, il], [xl, xl], [sample, sample]], "component_voxels": 1,
             "signed_difference_mean": -1.0, "absolute_difference_mean": 1.0,
             "nrms_mean_percent": 20.0, "min_paired_support": 9,
             "detector_flagged_voxels": {"mahalanobis": 0, "pca": 0, "isolation_forest": 0, "gmm": 0},
@@ -158,10 +159,12 @@ class Stage3RegistryTests(unittest.TestCase):
         next_id = "field-00000000000000000002"
         app.selectbox[0].set_value(next_id).run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
-        self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [1, 2, 3])
+        self.assertEqual(app.session_state["selected_finding_id"], next_id)
+        self.assertEqual(app.session_state["stage3_finding_selection"], next_id)
+        self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
         app.sidebar.radio[0].set_value("4D comparison").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
-        self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [1, 2, 3])
+        self.assertEqual([app.session_state[k] for k in ("shared_inline", "shared_crossline", "shared_sample")], [2, 3, 2])
         app.sidebar.radio[0].set_value("Evidence explanation").run()
         self.assertFalse(list(app.exception), str([e.message for e in app.exception]))
         self.assertTrue(any("No external request was made" in value for value in

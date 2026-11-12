@@ -960,6 +960,31 @@ elif page == "3D discovery map":
                            "<br>Edge risk %{customdata[5]:.2f}<br>Classical detector flags %{customdata[6]}"
                            "<extra></extra>"),
             name="Stage 3 finding locations"))
+        ni, nx, ns = baseline.shape
+        bounds = [(x, y, z) for x in (0, nx - 1) for y in (0, ni - 1) for z in (0, ns - 1)]
+        boundary_edges = ((0,1),(0,2),(0,4),(1,3),(1,5),(2,3),(2,6),(3,7),(4,5),(4,6),(5,7),(6,7))
+        edge_x, edge_y, edge_z = [], [], []
+        for first, second in boundary_edges:
+            edge_x.extend((bounds[first][0], bounds[second][0], None))
+            edge_y.extend((bounds[first][1], bounds[second][1], None))
+            edge_z.extend((bounds[first][2], bounds[second][2], None))
+        fig.add_trace(go.Scatter3d(x=edge_x, y=edge_y, z=edge_z, mode="lines",
+            line={"color": "#7b9293", "width": 2}, name="Baseline array envelope",
+            hoverinfo="skip"))
+        show_missing = st.checkbox("Overlay paired-grid bins masked by source validity", value=False,
+                                   key="stage3_map_missing_coverage")
+        if show_missing:
+            sampled_missing = display_mask(paired_missing, max_axis=180)
+            stride_i = int(np.ceil(ni / sampled_missing.shape[0]))
+            stride_x = int(np.ceil(nx / sampled_missing.shape[1]))
+            miss_i, miss_x = np.nonzero(sampled_missing)
+            fig.add_trace(go.Scatter3d(
+                x=np.minimum(miss_x * stride_x + stride_x // 2, nx - 1),
+                y=np.minimum(miss_i * stride_i + stride_i // 2, ni - 1),
+                z=np.full(miss_i.shape, int(st.session_state.get("shared_sample", 0))),
+                mode="markers", marker={"size": 2, "color": "#c2c9c9", "opacity": .65},
+                name="Display-binned masked paired-grid cells",
+                hovertemplate="Masked Baseline-grid bin<br>array IL %{y} · array XL %{x}<extra></extra>"))
         selected = next((item for item in map_records
                          if item["id"] == st.session_state.get("selected_finding_id")), map_records[0])
         extent = selected.get("extent")
