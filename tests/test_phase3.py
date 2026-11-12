@@ -107,7 +107,8 @@ class PresentationWorkflowTests(unittest.TestCase):
                 patch('reservoir_time_machine.llm.gemma_client._client',side_effect=AssertionError('No external request')) as client:
                 app=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'),default_timeout=30).run()
                 self.assertFalse(list(app.exception))
-                app.sidebar.radio[0].set_value('Survey transition').run()
+                app.sidebar.radio[0].set_value('03 — 4D Reservoir Evolution').run()
+                next(v for v in app.sidebar.selectbox if v.label=='Section').set_value('Survey transition').run()
                 old=app.session_state['registry_selection']
                 next(v for v in app.button if v.label=='Next scene').click().run()
                 self.assertEqual(app.session_state['presentation_scene'],1)

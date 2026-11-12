@@ -655,6 +655,16 @@ with st.sidebar:
         "04 — Geology & Wells": "Well inventory",
         "05 — Development Studio": "Recovery intelligence",
     }[page_group]
+    subviews = {
+        "HOME — Reservoir Intelligence": ["Reservoir Command Center"],
+        "01 — Confidence & QC": ["Overview and QC", "Change detection", "Evidence explanation", "Expert diagnostics"],
+        "02 — 3D Reservoir": ["3D discovery map", "3D explorer"],
+        "03 — 4D Reservoir Evolution": ["4D comparison", "Survey transition"],
+        "04 — Geology & Wells": ["Well inventory"],
+        "05 — Development Studio": ["Recovery intelligence"],
+    }[page_group]
+    if len(subviews) > 1:
+        page = st.sidebar.selectbox("Section", subviews, key=f"section_{page_group}")
     if full_field_registry and full_field_registry['entries']:
         current=field_entry
         st.markdown(f"**Full-volume finding {current['rank']} / {len(full_field_registry['entries'])}**")

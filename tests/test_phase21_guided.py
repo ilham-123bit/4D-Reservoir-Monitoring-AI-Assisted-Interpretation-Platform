@@ -137,8 +137,14 @@ class GuidedTests(unittest.TestCase):
             app=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'),default_timeout=30).run()
             self.assertFalse(list(app.exception))
             focus=[app.session_state[k] for k in ('shared_inline','shared_crossline','shared_sample')]
+            route_group = {'Overview and QC':'01 — Confidence & QC','3D explorer':'02 — 3D Reservoir',
+                           '4D comparison':'03 — 4D Reservoir Evolution','Change detection':'01 — Confidence & QC',
+                           'Survey transition':'03 — 4D Reservoir Evolution','Well inventory':'04 — Geology & Wells',
+                           'Evidence explanation':'01 — Confidence & QC'}
             for page in ('Overview and QC','3D explorer','4D comparison','Change detection','Survey transition','Well inventory','Evidence explanation'):
-                figures.clear();app.sidebar.radio[0].set_value(page).run()
+                figures.clear();app.sidebar.radio[0].set_value(route_group[page]).run()
+                if page not in ('Overview and QC','Well inventory'):
+                    next(v for v in app.sidebar.selectbox if v.label=='Section').set_value(page).run()
                 self.assertFalse(list(app.exception),page)
                 self.assertTrue(any('**RESULT ·**' in v.value for v in app.markdown),page)
                 self.assertTrue(any('**DISCUSSION ·**' in v.value for v in app.markdown),page)

@@ -55,21 +55,28 @@ class DashboardRenderingTests(unittest.TestCase):
             self.assertEqual(len(app.slider), 0)
             warning = 'Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only.'
             self.assertIn(warning, [x.value for x in app.warning])
+            route_group = {'3D explorer':'02 — 3D Reservoir','3D discovery map':'02 — 3D Reservoir',
+                         '4D comparison':'03 — 4D Reservoir Evolution','Survey transition':'03 — 4D Reservoir Evolution',
+                         'Recovery intelligence':'05 — Development Studio','Change detection':'01 — Confidence & QC',
+                         'Evidence explanation':'01 — Confidence & QC','Expert diagnostics':'01 — Confidence & QC',
+                         'Overview and QC':'01 — Confidence & QC','Well inventory':'04 — Geology & Wells'}
             for page in ['3D explorer', '3D discovery map', '4D comparison', 'Recovery intelligence',
                          'Change detection', 'Survey transition', 'Well inventory', 'Evidence explanation',
                          'Overview and QC']:
                 charts.clear()
-                app.sidebar.radio[0].set_value(page).run()
+                app.sidebar.radio[0].set_value(route_group[page]).run()
+                if page not in ('Overview and QC','Well inventory','Recovery intelligence'):
+                    next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value(page).run()
                 self.assertEqual([e.message for e in app.exception], [], page)
                 self.assertIn(warning, [x.value for x in app.warning], page)
                 self.assertEqual(len(app.slider), 0, f'{page} must not expose manual coordinate sliders')
                 if page == '4D comparison':
                     self.assertEqual(len(app.sidebar.slider), 0)
-                    self.assertEqual(len(app.sidebar.selectbox), 0)
+                    self.assertEqual([v.label for v in app.sidebar.selectbox], ['Section'])
                     self.assertTrue(any('will not open an arbitrary survey midpoint' in x.value
                                         for x in app.info))
                 if page == 'Change detection':
-                    app.sidebar.radio[0].set_value('Expert diagnostics').run()
+                    next(v for v in app.sidebar.selectbox if v.label == 'Section').set_value('Expert diagnostics').run()
                     next(v for v in app.checkbox if v.label=='Run expert full-sample screening').check().run()
                     selector = next(x for x in app.selectbox if x.label == 'Inspect connected region')
                     selector.select_index(1).run()
