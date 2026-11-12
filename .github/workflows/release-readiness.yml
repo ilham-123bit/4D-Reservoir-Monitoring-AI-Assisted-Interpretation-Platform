@@ -1,0 +1,27 @@
+name: Candidate release readiness
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  complete-synthetic-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install application, data, inference and test dependencies
+        run: python -m pip install -e '.[dashboard,competition-data,ml,llm,test]'
+      - name: Install CPU-only neural test dependency
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Compile all source and tests
+        run: python -m compileall -q app.py src scripts tests
+      - name: Run full synthetic source test suite
+        run: PYTHONPATH=src:tests python -m pytest -q tests
+      - name: Check public documentation
+        run: python scripts/check_public_docs.py
