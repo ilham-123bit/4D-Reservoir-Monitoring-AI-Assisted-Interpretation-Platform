@@ -1400,6 +1400,19 @@ elif page == "Well inventory":
             st.caption(f"Baseline header-only sample: {header_geometry['sampled_trace_count']} traces; spatial holdout R² (X/Y) {header_geometry['affine_geometry']['holdout_r2_x_y']}; p95 holdout residual {header_geometry['affine_geometry']['holdout_error_coordinate_units_unknown']['p95']:.3f} in undeclared coordinate units. No amplitudes were loaded for this check.")
         else:
             st.info(f"Conditional coordinate comparison unavailable: {conditional_map.get('reason', 'header fit unavailable')}")
+        conditional_marker_rows = []
+        for item in evidence_matrix:
+            relationship = item.get("marker_checkshot_relationship", {})
+            for marker in relationship.get("markers", []):
+                if str(marker.get("marker", "")).strip().upper() in {"I-100", "I100"}:
+                    twt = float(marker["interpolated_source_checkshot_twt_ms"])
+                    conditional_marker_rows.append({"Well": item["well_id"], "Marker": marker["marker"],
+                        "Well-local interpolated checkshot TWT (ms)": round(twt, 2),
+                        "Array sample if sample 0 = 0 ms and 2 ms interval": int(round(twt / 2))})
+        if conditional_marker_rows:
+            st.markdown("### Conditional I-100 marker/sample comparison")
+            st.dataframe(conditional_marker_rows, use_container_width=True, hide_index=True)
+            st.caption("The TWT values are well-local interpolations from each well's source-declared TVDSS/TWT checkshot. Sample values are a sensitivity case only (zero-origin assumption); the SEG-Y domain origin and marker-to-seismic tie are not verified.")
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         st.info(f"Header-only conditional coordinate comparison unavailable: {exc}")
     st.markdown('### Evidence by source well')
