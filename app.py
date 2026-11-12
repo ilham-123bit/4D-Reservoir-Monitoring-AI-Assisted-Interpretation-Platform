@@ -43,6 +43,9 @@ from reservoir_time_machine.analysis.recovery_intelligence import (
 from reservoir_time_machine.analysis.local_compartment_screen import (
     screen_local_compartments, development_hypothesis,
 )
+from reservoir_time_machine.analysis.reservoir_hypotheses import (
+    screen_response_regions, candidate_briefing,
+)
 from reservoir_time_machine.analysis.conditional_reservoir import (
     conditional_follow_up_actions, conditional_i100_locations, conditional_scenario_key,
     evaluate_conditional_window, load_conditional_i100_evidence,
@@ -564,7 +567,12 @@ stage3_locations = {
     item["id"]: item["finding"]["array_location"] for item in stage3_investigations
 }
 selected_investigation = None
-if stage3_investigations:
+# Scientific full-field findings take precedence over the historical Stage 3
+# QC queue. Never silently substitute a QC action for a full-volume finding.
+if full_field_registry and field_entry:
+    selected_investigation = {"id": field_finding["id"], "kind": "full_field_screening",
+                              "finding": field_finding}
+elif stage3_investigations:
     stage3_ids = set(stage3_locations)
     selected_id = st.session_state.get("selected_finding_id")
     if selected_id not in stage3_ids:
@@ -573,9 +581,6 @@ if stage3_investigations:
     if st.session_state.get("stage3_finding_selection") != selected_id:
         st.session_state["stage3_finding_selection"] = selected_id
     selected_investigation = select_investigation(stage3_registry, selected_id)
-elif full_field_registry and field_entry:
-    selected_investigation = {"id": field_finding["id"], "kind": "full_field_screening",
-                              "finding": field_finding}
 
 # A selected scientific record owns the synchronized source location. Manual
 # navigation is available only on the separately named Expert diagnostics page.
@@ -598,9 +603,10 @@ if registry and registry['entries']:
         st.session_state['registry_selection']=st.session_state['preliminary_choice']
     entry=next(e for e in registry['entries'] if e['id']==st.session_state['registry_selection'])
     guided_result,guided_finding=entry['result'],entry['finding']
-    selected_investigation = {"id": guided_finding["id"], "kind": "bounded_screening",
-                              "finding": guided_finding}
-    st.session_state["selected_finding_id"] = guided_finding["id"]
+    if selected_investigation is None:
+        selected_investigation = {"id": guided_finding["id"], "kind": "bounded_screening",
+                                  "finding": guided_finding}
+        st.session_state["selected_finding_id"] = guided_finding["id"]
     if st.session_state.get("last_synced_finding_id") != guided_finding["id"]:
         location = (guided_finding["array_location"] if "array_location" in guided_finding
                     else guided_finding["representative"])
@@ -638,6 +644,13 @@ if qc_artifact_path.is_file():
     except (OSError, ValueError, KeyError, TypeError):
         qc_artifact_error = "Survey QC artifact failed source, version, or checksum validation."
 
+@st.cache_data(max_entries=16, show_spinner=False)
+def cached_coherent_response(dataset_identity, finding_id, indices,
+                             _baseline, _monitor, _missing, _inline_ids, _crossline_ids):
+    return screen_response_regions(_baseline, _monitor, _missing, indices,
+                                   _inline_ids, _crossline_ids)
+
+
 with st.sidebar:
     st.header("RESERVOIR TIME MACHINE")
     page_group = st.radio("Workspace", [
@@ -649,7 +662,7 @@ with st.sidebar:
         "05 — Development Studio",
     ], index=0, label_visibility="collapsed", key="workspace_page")
     page = {
-        "HOME — Reservoir Intelligence": "Reservoir Command Center",
+        "HOME — Reservoir Intelligence": "Reservoir Decision Briefing",
         "01 — Confidence & QC": "Overview and QC",
         "02 — 3D Reservoir": "3D discovery map",
         "03 — 4D Reservoir Evolution": "4D comparison",
@@ -657,7 +670,7 @@ with st.sidebar:
         "05 — Development Studio": "Recovery intelligence",
     }[page_group]
     subviews = {
-        "HOME — Reservoir Intelligence": ["Reservoir Command Center"],
+        "HOME — Reservoir Intelligence": ["Reservoir Decision Briefing"],
         "01 — Confidence & QC": ["Overview and QC", "Change detection", "Evidence explanation", "Expert diagnostics"],
         "02 — 3D Reservoir": ["3D discovery map", "3D explorer"],
         "03 — 4D Reservoir Evolution": ["4D comparison", "Survey transition"],
