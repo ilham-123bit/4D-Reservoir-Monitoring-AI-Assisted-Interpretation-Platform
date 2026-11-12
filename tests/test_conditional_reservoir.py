@@ -104,6 +104,8 @@ class ConditionalReservoirTests(unittest.TestCase):
         }
         result = evaluate_conditional_window(b, m, missing, item)
         self.assertAlmostEqual(result["observed"]["support_fraction"], 0.6)
+        self.assertEqual(result["response_vs_off_window_controls"],
+                         "insufficient_paired_support_for_comparison")
         self.assertEqual(result["observed"]["valid_pairs"], 15 * 21)
         with self.assertRaises(ValueError):
             evaluate_conditional_window(b, m, np.zeros((4, 5), bool), item)
