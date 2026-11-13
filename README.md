@@ -1,54 +1,62 @@
 # Reservoir Time Machine
+**APGCE GeoHackathon 2026 · Challenge 3 · Angsi Field**
 
-**APGCE GeoHackathon 2026 · Challenge 3**
+An AI-assisted, source-linked application comparing Angsi's **1995 Baseline** and **2006 Monitor** 3D seismic surveys. The goal is to move from measured time-lapse response to understandable reservoir hypotheses and ranked **investigation** decisions.
 
-Reservoir Time Machine compares the 1995 Angsi Baseline and 2006 Monitor seismic surveys. Its objective is to connect measured 4D differences with reservoir hypotheses, evidence quality, and recovery investigations—not to equate an anomaly with remaining hydrocarbons.
+## The three questions
 
-## Scientific status
+- **Where did the oil go?** Investigate spatial 4D response and reservoir connectivity to develop competing fluid/pressure movement hypotheses. Fluid type and flow paths are **not confirmed** from the supplied evidence.
+- **Which areas have been swept efficiently?** Contrast coherent stronger- and lower-response regions. This is a **seismic production-response screen**, not a measured volumetric sweep efficiency.
+- **Where might hydrocarbons remain?** Map relatively quiet areas adjacent to changed areas and assess possible limited-drainage compartments. A quiet 4D signal alone does not identify bypassed oil, and no drill-ready target has been qualified.
 
-Full-field Stage 1 seismic attributes, Stage 2B classical ML screening, and the checksummed Stage 3 review are complete. The archived ten leading findings are MAD-only. Multivariate consensus is concentrated near the survey boundary. Exact trace-key pairing is available on the Baseline grid; physical registration and reservoir ties are not independently verified. No drill-ready recovery target or calibrated drilling-success probability is established.
+## Six-page judging experience
 
-The eight-well inventory includes logs, markers, checkshots, and deviation information. Well-local I-100 marker times in Wells 5–7 allow **conditional** seismic-window comparisons under explicitly assumed coordinate and time origins. These tests quantify actual paired seismic response, nearby comparison windows, and small-lag sensitivity; they do **not** verify reservoir location, fluid movement, or sweep.
+| Page | Purpose |
+| --- | --- |
+| **Home — Reservoir Intelligence** | Three concise questions, selected source-linked finding, connected-region NRMS map, locations and conditional next decision |
+| **01 — Confidence & QC** | Survey pairing, evidence coverage, registration uncertainty, model support and limitations |
+| **02 — 3D Reservoir** | Interactive seismic sections, 3D map/explorer, selected regions and supporting geological context |
+| **03 — 4D Reservoir Evolution** | Baseline, Monitor, difference, NRMS, comparative views and time-lapse visualizations |
+| **04 — Geology & Wells** | Eight-well inventory, available logs, markers, checkshots and conditional well-to-seismic context |
+| **05 — Development Studio** | Ranked **seismic investigation** areas, geological hypotheses, pre-drilling evidence gates and discipline-specific next decisions |
 
-## Operator workflow
+A context-aware **Ask Gemma about this view** panel is embedded across the six pages. Its bounded local evidence assistant works without an external model; live Gemma needs approved endpoint and data-sharing configuration.
 
-Use a validated existing cache and the authorized organizer inputs:
+## Implemented Angsi analysis
+
+- Exact Baseline-grid trace-key pairing of the two surveys; **3,087 Monitor-only traces remain excluded from all paired 4D attributes** and available separately for coverage diagnostics.
+- Completed full-field Stage 1 attributes and Stage 2B classical-ML screening. A checksum-verified **private full-field registry** was published on the HPC with **10 source-linked findings**. Results are loaded from private runtime configuration, not checked into GitHub.
+- A coherent-region screen contrasts connected stronger and relatively quiet 1995–2006 seismic response within bounded, supported windows, using real SEG-Y inline/crossline and sample IDs. It excludes missing, nonfinite and low-energy traces and tests spatial separation against local variability.
+- Stage 2B model outputs include GMM, Isolation Forest, Mahalanobis and PCA; **none flagged any voxels in the 10 published priority components**. Thus the component shortlist does **not** have independent multivariate-detector confirmation. The archival high-priority findings are MAD-only.
+- Conditional I-100 well-window tests assess Wells 5–7 under three assumed time origins. These are sensitivity experiments, not nine confirmed reservoir discoveries.
+- Candidate evidence, alternative physical/processing hypotheses and decision prerequisites are shown without converting detector scores into hydrocarbon probabilities.
+
+**Scientific boundary:** Physical 4D registration, the absolute seismic time origin, verified reservoir horizons, well-to-seismic tie, fluid type, production-linked movement and remaining oil saturation are **not independently established**. No volumetric sweep fraction, calibrated recovery Chance of Success, proved bypassed-hydrocarbon body or drill-ready well has been claimed.
+
+## Run and validate
+
+Use only authorized datasets and an existing paired cache:
 
 ```bash
 python -m pip install -e '.[dashboard,competition-data,ml,llm,test]'
 export RTM_CHALLENGE3_ROOT=./authorized/challenge3
 export RTM_CACHE_DIR=./authorized/paired-cache
-export RTM_STAGE3_EVIDENCE_DIR=./authorized/stage3-evidence
 PYTHONPATH=src streamlit run app.py
 ```
 
-The **Reservoir Command Center** includes conditional I-100 evidence and preserves historical Stage 3 screening. Finding-directed seismic comparisons, NRMS, coverage, support, spatial displays, and animations use real cached surveys. Manual grid sliders are isolated in Expert diagnostics. Interpolated animation frames are visualizations, not acquired surveys.
-
-For a versioned, bounded scientific result, run in an authorized environment:
+For the existing APGCE HPC deployment, the original desktop launcher and autosync watcher serve the canonical application. The private registry is referenced in `~/.config/reservoir-time-machine/runtime.json` under `full_field_registry`. Publication from completed artifacts uses `scripts/hpc/activate_full_field_registry.sh` with the verified H200 Slurm node constraint; it **does not rerun Stage 1/2B ML**.
 
 ```bash
-PYTHONPATH=src python scripts/hpc/run_conditional_i100.py \
-  --root ./authorized/challenge3 \
-  --cache-dir ./authorized/paired-cache \
-  --output ./private-results/conditional-i100.json
-```
-
-The output directory must be private. The run reads existing paired arrays; it never launches full-field processing.
-
-## Validation
-
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -q
-python -m pytest -q
+PYTHONPATH=src python -m pytest -q
 python scripts/check_public_docs.py
 ```
 
-The repository includes classical detectors and experimental Bayesian, Autoencoder, and Siamese implementations. Neural smoke tests and uncalibrated model scores are not verified Angsi fluid classifications. Real-data interpretation requires scientific validation independent of model agreement.
+Merged source changes passed the repository's documentation, numerical smoke and candidate-release checks. Desktop/browser visual acceptance, runtime fingerprint and any live Gemma endpoint must be verified independently on the authorized HPC session; CI is not a substitute.
 
-## Reuse and privacy
+## Submission and data protection
 
-New deployments require authorized datasets, correct survey geometry, existing or scheduled processing, and source-specific well references. Heavy computation runs outside Streamlit using configured resources and saved artifacts. This repository contains software and configuration templates, **not** organizer SEG-Y/LAS inputs, private derived data, checkpoints, secrets, or internal service endpoints.
+This repository contains the application, test harnesses and scientific workflow code. It does **not** distribute organizer SEG-Y/LAS volumes, private derived seismic outputs, model checkpoints, credentials or private per-user runtime settings. Source-linked positions and the full candidate record remain within authorized HPC artifacts.
 
-The application differentiates observations, conditional hypotheses, and sanctioned development decisions. No hypothesis may be promoted to a drilling recommendation without adequate evidence.
+The prototype provides **measured change detection, candidate visualization and explainable conditional investigation**; it does not assert that seismic anomalies alone prove oil movement, sweep efficiency or drilling prospects.
 
-See [final RTM product and release acceptance contract](docs/rtm-product-contract.md) for the complete scientific, UI, Gemma and deployment requirements.
+See [the scientific and product acceptance contract](docs/rtm-product-contract.md) for the complete definitions and safeguards.

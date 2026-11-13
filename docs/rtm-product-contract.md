@@ -1,42 +1,57 @@
-# Reservoir Time Machine — final product and acceptance contract
+# Reservoir Time Machine — scientific and submission contract
+**APGCE GeoHackathon 2026 · Challenge 3 · Angsi Baseline 1995 / Monitor 2006**
 
-**Mission:** APGCE GeoHackathon 2026 Challenge 3. Interpret Angsi 1995 Baseline vs 2006 Monitor with paired seismic and eight-well source evidence. The primary user journey is **AI/ML detects → validates → selects → visualizes → interprets → recommends → reservoir team decides**. Do not substitute a generic QC dashboard for this product.
+## Product objective
 
-## Three required answers
+Use actual paired time-lapse seismic and supplied well evidence to answer, as far as the evidence permits:
 
-1. **What is happening?** Show actual paired 4D attribute measurements, location, spatial extent, seismic character, relevant time/sample, support, and alternative explanations.
-2. **Which changes matter?** Run completed whole-eligible-field statistical/ML evidence through repeatability, registration, missing-trace, survey-edge, and source-provenance gates. Prioritize 5–10 impactful scientific **investigations** by urgency, coherent support, decision value, uncertainty and recovery relevance—not raw amplitude or largest NRMS. Distinguish historical MAD-only ranks from independent detector support.
-3. **Where is the next recovery opportunity?** Show a conditional geoscience hypothesis, evidence for and against, what a reservoir team should test next, and a clear unmet-evidence gate. Never label a drilling prospect, sweep state, bypassed oil, fluid, pressure mechanism, or calibrated chance of success as verified without independently adequate evidence.
+1. **Where did the oil potentially go?** Map production-compatible seismic changes; test physical mechanisms and plausible fluid/pressure connectivity without inventing a measured movement trajectory.
+2. **Which reservoir areas were effectively swept?** Compare reservoir-associated coherent stronger- and lower-response areas; reserve quantitative volumetric sweep efficiency for validated dynamic and saturation evidence.
+3. **Where might untapped hydrocarbons remain?** Combine demonstrable reservoir quality, spatial detectability, relatively limited response, compartment continuity/barriers and well/production constraints before describing a potential bypassed-hydrocarbon prospect.
+4. **What should engineers investigate?** Rank actual source locations and distinguish exploration/appraisal hypotheses from drill-ready engineering decisions.
 
-## Scientific contract
+Two vintage snapshots constrain an endpoint comparison; any visualization between them is illustrative, not an observed annual fluid-flow history.
 
-- Pair Baseline and Monitor by exact common trace keys on the Baseline grid. Exclude all **3,087 Monitor-only traces** from paired attributes and preserve them only for separate edge/coverage diagnostics.
-- Preserve completed full-field scientific output and checksummed lineage; never rerun Stage 1 or Stage 2B without reason and authorization.
-- Always display: **"Trace-key pairing is available on the Baseline grid. Physical 4D registration is not yet verified. Interpret paired attributes as preliminary screening only."**
-- No independently verified physical 4D registration, shared well/SEG-Y CRS or datum, well-to-seismic tie, absolute seismic sample origin, validated horizon/fault interpretation or production/injection/pressure response was provided in this release context. Do not silently substitute assumptions.
-- I-100 source-local marker/checkshot scenarios for Wells 5–7 at assumed origins −20/0/+20 ms are nine **scenarios, not nine discoveries**. The real-data evaluation found 525/525 supported pairs in each, NRMS 14.18–40.10%, 0.92–0.99 correlation and origin-sensitive signed amplitudes; only Well-6 +20ms was just above its off-window threshold. Local controls are not verified unchanged reservoir controls.
-- Historical full-field top ten are MAD-only; multi-detector consensus is concentrated near a survey edge. Bayesian, autoencoder and Siamese Angsi scientific outcomes remain unvalidated until data-specific training, calibration and acceptance.
-- Segment every output into **Observed**, **Conditional interpretation**, **Alternatives**, **Confidence/limitations**, **Recovery relevance**, and **Next test**. Never turn an uncalibrated score into a recovery probability.
+## Source and processing rules
 
-## Interface contract
+- Match exactly by Baseline-grid trace keys. The **3,087 Monitor-only traces** must never enter paired 4D calculations; preserve them separately for edge/coverage diagnostics.
+- Preserve valid/missing trace support, finite sample support, original SEG-Y IL/XL/sample identities, checksums and cache lineage.
+- Completed Stage 1/Stage 2B source outputs must be reused where valid; do not rerun costly whole-volume processing on page navigation.
+- A private, checksum-verified full-field registry is the source for the active 10-component seismic shortlist. Do not confuse the historical Stage 3 QC queue with geological prospects.
+- MAD, PCA, GMM, Mahalanobis and Isolation Forest identify statistical characteristics, not fluid or geological truth. The 10 published components have **zero flagged voxels from each of the four multivariate detectors**; no independent model consensus supports them. Review their evidence and alternatives honestly.
+- Missing, nonfinite, edge-sensitive and low-energy positions are not unswept-hydrocarbon signals; sample-time, reservoir-mask and survey-repeatability uncertainty must be carried into interpretation.
 
-- One existing Streamlit product, black background with bright white/high-contrast neon turquoise/green, large readable key figures.
-- Default **Reservoir Command Center** answers the three questions above with a synchronized selected finding.
-- Finding-directed **Baseline, Monitor and Monitor − Baseline** slices; shared comparative seismic amplitude scaling and centered difference palette; synchronized inline/crossline/sample, 4D comparison, 3D discovery/map, 3D explorer and selected evidence/report state. Source SEG-Y IDs and array indices must be labeled separately.
-- No manual IL/XL/sample controls in the judge-facing workflow. Preserve them only in **Expert diagnostics**.
-- Present well-top/checkshot/deviation, LAS curve families and unit-checked sonic-density impedance context when source data support it, with explicit non-association flags.
-- Always offer a wide, usable **Gemma AI Copilot** conversational page, selected-finding context, evidence IDs, grounded explanations and human-readable follow-up decisions. A live model call requires configured and approved endpoint, explicit restricted-data authorization and bounded allowlisted evidence, never private raw SEG-Y/LAS/paths/keys. Provide a deterministic local fallback, labeled as **not Gemma**. Gemini/Gemma text is not geoscientific validation.
-- Keep context synchronized on navigation; protect against stale finding/session identity, unverified source geometry and expensive full-field recomputation during interactions.
-- Maintain a clear list of ML execution/capability statuses rather than presenting synthetic research models as validated Angsi production systems.
+## Interpretation maturity
 
-## Operations and release contract
+**Measured:** relative seismic changes, amplitudes, NRMS, correlation, finite support, candidate footprints and original source-grid identifiers.
 
-- Canonical HPC application is the **only production checkout**. Existing systemd user service runs Streamlit on port **8501**; existing desktop icon opens it. Normal use should not require a persistent manual terminal.
-- Work on reviewed development history and merge only an accepted, non-destructive release to `main`. Eventually **only the `main` remote branch** remains; review the unique old documentation commit before retiring it.
-- The watcher currently auto-publishes allowlisted local source changes and has a separately modified remote-main fast-forward path. **That private watcher rollout/rollback is not yet integration-tested.** A GitHub merge can trigger automatic production deployment. Do not merge until deployment safety is proven.
-- Never publish seismic/well data, private AI endpoints, raw generated scientific artifacts, model checkpoints, secrets, caches, per-user paths or HPC credentials. Stage only individually reviewed public source files. Protect the canonical checkout from destructive cleanup or overwriting local scientific assets.
-- Test: full Python compilation, complete synthetic source suite, numerical/QC invariants, real Angsi bounded tests with checksums and edge exclusions, live-source Streamlit AppTest, actual desktop/browser visual acceptance, Gemma endpoint health and permitted question/reply when configured, false-answer/privacy gates, auto-deploy/rollback and post-release fingerprint/health.
+**Conditional:** stronger/lower response patterns, possible depletion or pressure/saturation scenarios, geological barriers and limited-sweep hypotheses.
 
-## Completion definition
+**Not established by this release:** independently verified physical 4D registration; absolute seismic time zero; well-to-seismic tie/reservoir top; reliable pressure or oil/gas/water identification; true fluid-flow paths; remaining hydrocarbon saturation; volumetric sweep percentages; calibrated recovery probability; sanctioned infill drilling target.
 
-**Code ready** requires all GitHub checks green and source complete. **Science ready** requires actual Angsi proof for each asserted measurement and honest unresolved mechanisms. **Demo ready** requires verified synchronized pages and conversational UX against the real cache. **Production ready** requires successful guarded release through the original desktop icon plus tested rollback. Only then merge and retire other branches. If a gate cannot be satisfied, report it explicitly rather than claiming completion.
+Every prominent interpretation should include a real source-grid location, observed measurement, mechanism(s), decisive alternative and a specific next decision. Do not pad Home or Development Studio with repetitive QC essays. Provide one concise scientific-readiness summary in Confidence & QC; retain appropriate contextual status elsewhere without hiding important uncertainty.
+
+## Six pages — fixed presentation structure
+
+1. **Home — Reservoir Intelligence** (unnumbered): *What changed and where? Why might it have changed? Where to investigate next?* A synchronized selected finding, local connected-response map and short decision.
+2. **01 — Confidence & QC:** coverage, registration, well tie, model flags, detectability, edge risks and uncertainty evidence.
+3. **02 — 3D Reservoir:** candidate-linked maps, 3D seismic/structural context and available well locations.
+4. **03 — 4D Reservoir Evolution:** comparable Baseline and Monitor, difference, NRMS, source-linked inline/crossline/sample and bounded visual evolution.
+5. **04 — Geology & Wells:** available well curves, checkshots, markers, conditional ties, impedance and geological evidence.
+6. **05 — Development Studio:** source-grid candidate investigations, engineering options, assumptions and pre-drilling gates.
+
+No extra top-level page for Gemma, Recovery Intelligence, Change Detection or Expert diagnostics. Existing specialized tools may remain subordinate sections. No manual coordinate sliders in the judge-facing workflow.
+
+**Gemma:** a contextual, collapsible assistant on all six pages. Supply bounded evidence summaries with active page, finding, source locations and plot values. A local grounded fallback is not a live Gemma model. Live inference requires a verified approved endpoint, restricted-data permission and explicit consent; never transmit raw SEG-Y, LAS, secrets or private paths.
+
+**Visual style:** black/dark background, bright white type and turquoise accents. Validate text/control contrast at rest (not only on hover). Keep plots readable and favor concise evidence-led conclusions.
+
+## Acceptance and release
+
+- Automated tests: Python compilation, full source tests, paired/missing trace invariants, numerical and false-oil safeguards, AppTest navigation/synchronization and privacy checks.
+- HPC reality: published full-field registry checksum and source identity; synchronized canonical source and GitHub `main`; the original desktop launcher, Streamlit health, selected actual-data views and all six pages inspected on the authorized HPC session.
+- CI green verifies software behavior; **it does not independently prove fluid type, bypassed oil, reservoir sweep or physical registration**.
+- Preserve all private cache files, historical release artifacts and unrelated operator work. Never upload organizer data or confidential derived volumes to the public GitHub repository.
+- Keep a tested, reproducible `main` as the submission source. Cleanup historical branches only after verifying that no unique current implementation is lost. Final release status must separate completed, conditional and blocked scientific/operational items.
+
+**Final submission is a scientifically honest prototype:** completed 1995–2006 seismic difference analytics, coherent regional comparison, unsupervised ML screening, source-linked 3D/4D visualization and ranked investigation recommendations. It is **not** a validated hydrocarbon-flow simulator or an approved drilling plan.
