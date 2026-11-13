@@ -42,6 +42,7 @@ cat > "$JOB" <<'SLURM'
 #SBATCH --partition=petronas_apgce
 #SBATCH --qos=normal
 #SBATCH --mcs-label=apgce
+#SBATCH --constraint=nodetype-h200.B-3072
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
